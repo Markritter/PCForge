@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="PcForge" />
+<meta name="theme-color" content="#15130f" />
+<title>PcForge</title>
+
+<!-- React -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- Supabase client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+*{box-sizing:border-box;}
+body{margin:0;}
+.pf-root{
+  --bg:#15130f; --surface:#1e1b15; --surface2:#26221a; --surface3:#2f2a20;
+  --border:#3a3327; --border-soft:#2b2619;
+  --text:#eee6d6; --text-dim:#a89b85; --text-faint:#6f6552;
+  --amber:#ffb02e; --amber-dim:#cc8a1f;
+  --ember:#ff5a36; --ember-dim:#b8391f;
+  --blue:#5fb4ff; --blue-dim:#3d84c2;
+  --green:#7cb35c; --green-dim:#5c8a45;
+  font-family:'Inter',sans-serif;
+  background:var(--bg); color:var(--text);
+  min-height:100vh; display:flex; justify-content:center;
+}
+.pf-shell{ width:100%; max-width:460px; min-height:100vh; background:var(--bg); display:flex; flex-direction:column; position:relative; border-left:1px solid var(--border-soft); border-right:1px solid var(--border-soft); }
+.pf-header{ padding:18px 18px 14px; border-bottom:1px solid var(--border); background:linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); position:sticky; top:0; z-index:10; }
+.pf-header-row{ display:flex; align-items:center; justify-content:space-between; }
+.pf-logo{ display:flex; align-items:center; gap:8px; }
+.pf-logo-mark{ color:var(--amber); filter:drop-shadow(0 0 6px rgba(255,176,46,0.5)); }
+.pf-logo-text{ font-family:'Oswald',sans-serif; font-weight:700; font-size:20px; letter-spacing:2px; }
+.pf-logo-sub{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:2px; color:var(--text-faint); text-transform:uppercase; margin-top:2px; cursor:pointer; }
+.pf-header-net{ text-align:right; }
+.pf-header-net-label{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:1.5px; color:var(--text-faint); text-transform:uppercase; }
+.pf-header-net-value{ font-family:'JetBrains Mono',monospace; font-weight:600; font-size:15px; margin-top:2px; }
+.pf-content{ flex:1; padding:16px 16px 90px; overflow-y:auto; }
+.pf-section-title{ font-family:'Oswald',sans-serif; font-size:13px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-dim); margin:22px 0 10px; display:flex; align-items:center; gap:8px; }
+.pf-section-title:first-child{ margin-top:0; }
+.pf-bottomnav{ position:sticky; bottom:0; z-index:20; display:flex; border-top:1px solid var(--border); background:var(--surface); }
+.pf-navbtn{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 4px 8px; background:none; border:none; cursor:pointer; color:var(--text-faint); font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.5px; text-transform:uppercase; border-top:2px solid transparent; }
+.pf-navbtn.active{ color:var(--amber); border-top:2px solid var(--amber); }
+.pf-statgrid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.pf-statcard{ background:var(--surface); border:1px solid var(--border); padding:14px 14px 12px; position:relative; overflow:hidden; }
+.pf-statcard::before{ content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--accent, var(--amber)); opacity:0.7; }
+.pf-statcard-label{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-faint); }
+.pf-statcard-value{ font-family:'JetBrains Mono',monospace; font-weight:600; font-size:19px; margin-top:6px; }
+.pf-statcard-sub{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-faint); margin-top:4px; }
+.pf-card{ background:var(--surface); border:1px solid var(--border); padding:14px; margin-bottom:10px; }
+.pf-btn{ font-family:'Inter',sans-serif; font-weight:600; font-size:13px; border:1px solid var(--border); background:var(--surface2); color:var(--text); padding:9px 14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; border-radius:2px; }
+.pf-btn:active{ transform:scale(0.97); }
+.pf-btn-primary{ background:var(--amber); color:#1a1508; border-color:var(--amber); }
+.pf-btn-ghost{ background:transparent; }
+.pf-btn-danger{ background:transparent; color:var(--ember); border-color:var(--ember-dim); }
+.pf-btn-sm{ padding:5px 9px; font-size:11px; }
+.pf-btn-block{ width:100%; justify-content:center; }
+.pf-iconbtn{ background:transparent; border:1px solid var(--border); color:var(--text-dim); padding:6px; cursor:pointer; border-radius:2px; display:flex; }
+.pf-badge{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.5px; text-transform:uppercase; padding:3px 7px; border-radius:2px; border:1px solid; display:inline-block; }
+.pf-badge-amber{ color:var(--amber); border-color:var(--amber-dim); background:rgba(255,176,46,0.08); }
+.pf-badge-blue{ color:var(--blue); border-color:var(--blue-dim); background:rgba(95,180,255,0.08); }
+.pf-badge-green{ color:var(--green); border-color:var(--green-dim); background:rgba(124,179,92,0.08); }
+.pf-badge-ember{ color:var(--ember); border-color:var(--ember-dim); background:rgba(255,90,54,0.1); }
+.pf-badge-dim{ color:var(--text-faint); border-color:var(--border); }
+.pf-listitem{ border-bottom:1px solid var(--border-soft); padding:12px 0; }
+.pf-listitem:last-child{ border-bottom:none; }
+.pf-listitem-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.pf-listitem-name{ font-weight:600; font-size:14px; }
+.pf-listitem-meta{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); margin-top:3px; }
+.pf-listitem-actions{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+.pf-stockbar{ height:4px; background:var(--surface3); border-radius:2px; margin-top:8px; overflow:hidden; }
+.pf-stockbar-fill{ height:100%; }
+.pf-search{ display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); padding:9px 12px; margin-bottom:14px; }
+.pf-search input{ background:none; border:none; color:var(--text); font-family:'Inter',sans-serif; font-size:13px; outline:none; flex:1; }
+.pf-empty{ text-align:center; padding:40px 16px; color:var(--text-faint); }
+.pf-empty-title{ font-family:'Oswald',sans-serif; font-size:14px; letter-spacing:1px; color:var(--text-dim); text-transform:uppercase; margin-top:8px; }
+.pf-empty-msg{ font-size:12px; margin-top:6px; max-width:260px; margin-left:auto; margin-right:auto; }
+.pf-overlay{ position:fixed; inset:0; background:rgba(10,9,6,0.75); display:flex; align-items:flex-end; justify-content:center; z-index:100; }
+.pf-modal{ width:100%; max-width:460px; background:var(--surface); border-top:1px solid var(--border); max-height:88vh; overflow-y:auto; padding:18px 18px 24px; }
+.pf-modal-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.pf-modal-title{ font-family:'Oswald',sans-serif; font-size:16px; letter-spacing:1px; text-transform:uppercase; }
+.pf-field{ margin-bottom:12px; }
+.pf-field label{ display:block; font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-faint); margin-bottom:5px; }
+.pf-field input, .pf-field select, .pf-field textarea{ width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:9px 10px; font-family:'Inter',sans-serif; font-size:14px; border-radius:2px; outline:none; }
+.pf-field input:focus, .pf-field select:focus, .pf-field textarea:focus{ border-color:var(--amber); }
+.pf-field-row{ display:flex; gap:10px; }
+.pf-field-row .pf-field{ flex:1; }
+.pf-error{ color:var(--ember); font-size:12px; margin-bottom:10px; font-family:'JetBrains Mono',monospace; }
+.pf-modal-actions{ display:flex; gap:8px; margin-top:16px; }
+.pf-lowstock-row{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-left:2px solid var(--ember); padding-left:10px; margin-bottom:4px; }
+.pf-activity-row{ display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--border-soft); }
+.pf-activity-row:last-child{ border-bottom:none; }
+.pf-activity-icon{ width:26px; height:26px; border-radius:2px; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+.pf-activity-text{ flex:1; font-size:12.5px; color:var(--text-dim); }
+.pf-activity-text b{ color:var(--text); font-weight:600; }
+.pf-activity-amt{ font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:600; white-space:nowrap; }
+.pf-usedin{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
+.pf-usedin-row{ display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); padding:3px 0; }
+.pf-expand{ cursor:pointer; display:flex; align-items:center; gap:4px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-faint); margin-top:8px; }
+.pf-buildparts{ margin-top:10px; padding-top:10px; border-top:1px solid var(--border-soft); }
+.pf-buildpart-row{ display:flex; justify-content:space-between; font-size:12px; padding:4px 0; color:var(--text-dim); }
+.pf-buildpart-row b{ color:var(--text); font-weight:500; }
+.pf-totalbar{ display:flex; justify-content:space-between; align-items:center; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-dim); padding:10px 0 4px; }
+.pf-totalbar b{ color:var(--text); font-size:14px; }
+.pf-authwrap{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; width:100%; }
+.pf-authcard{ width:100%; max-width:340px; }
+.pf-authtoggle{ text-align:center; margin-top:14px; font-size:12px; color:var(--text-faint); cursor:pointer; }
+.pf-authtoggle b{ color:var(--amber); }
+.pf-authnote{ font-size:11px; color:var(--text-faint); text-align:center; margin-top:16px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+/* =========================================================
+   1) SUPABASE SETUP
+   Paste your own project's URL + anon/publishable key below.
+   Find them via: Supabase Dashboard > your project > "Connect" button
+   (top of the page) — these values are safe to expose in client code.
+========================================================= */
+const SUPABASE_URL = "https://lxsmbxdtvdjrpqgbadpt.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_EX4OWbVh1dvem_WMPovA2Q_mVGCZ2Kd";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ===================== Helpers ===================== */
+const CATEGORIES = ["CPU","GPU","Motherboard","RAM","Storage","PSU","Case","Cooling","Peripherals","Cables/Other"];
+const EXPENSE_CATEGORIES = ["Rent","Tools/Equipment","Shipping","Software","Marketing","Utilities","Fees","Other"];
+const ACCENTS = ["amber","blue","green"];
+function hashAccent(str){ let h=0; for(const c of String(str)) h=(h+c.charCodeAt(0))%ACCENTS.length; return ACCENTS[h]; }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function fmtR(n){ const v=Number(n||0); return "R "+v.toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDate(d){ if(!d) return "—"; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}); }
+
+/* ===================== Minimal icon set (no external deps) ===================== */
+function Icon({ name, size=16, color="currentColor" }){
+  const common = { width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:color, strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round" };
+  switch(name){
+    case "dashboard": return <svg {...common}><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>;
+    case "package": return <svg {...common}><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>;
+    case "wrench": return <svg {...common}><path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 1 5.4-5.4l-3-3z"/></svg>;
+    case "cart": return <svg {...common}><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>;
+    case "receipt": return <svg {...common}><path d="M4 3h16v18l-3-2-3 2-3-2-3 2-3-2-1 2z"/><path d="M8 8h8M8 12h8"/></svg>;
+    case "plus": return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
+    case "x": return <svg {...common}><path d="M18 6L6 18M6 6l12 12"/></svg>;
+    case "trash": return <svg {...common}><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>;
+    case "pencil": return <svg {...common}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>;
+    case "alert": return <svg {...common}><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>;
+    case "trend": return <svg {...common}><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>;
+    case "flame": return <svg {...common} fill={color} stroke="none"><path d="M12 2c1 4-4 5-4 9a4 4 0 0 0 8 0c0-1.5-1-2-1-3.5C17 9 19 11 19 14a7 7 0 0 1-14 0c0-5 4-6 5-9 .3-1 .5-2 2-3z"/></svg>;
+    case "chevronDown": return <svg {...common}><path d="M6 9l6 6 6-6"/></svg>;
+    case "chevronRight": return <svg {...common}><path d="M9 18l6-6-6-6"/></svg>;
+    case "search": return <svg {...common}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>;
+    case "check": return <svg {...common}><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>;
+    case "arrowUp": return <svg {...common}><path d="M7 17L17 7M7 7h10v10"/></svg>;
+    case "arrowDown": return <svg {...common}><path d="M7 7l10 10M17 7v10H7"/></svg>;
+    default: return null;
+  }
+}
+
+/* ===================== Small building blocks ===================== */
+function StatCard({label,value,sub,accent,glow}){
+  const colorVar = accent==="ember"?"var(--ember)":accent==="green"?"var(--green)":accent==="blue"?"var(--blue)":"var(--amber)";
+  return (
+    <div className="pf-statcard" style={{"--accent":colorVar}}>
+      <div className="pf-statcard-label">{label}</div>
+      <div className="pf-statcard-value" style={{color:colorVar, textShadow: glow ? `0 0 12px ${colorVar}55` : "none"}}>{value}</div>
+      {sub && <div className="pf-statcard-sub">{sub}</div>}
+    </div>
+  );
+}
+function Badge({tone="dim",children}){ return <span className={`pf-badge pf-badge-${tone}`}>{children}</span>; }
+function EmptyState({icon,title,message}){
+  return <div className="pf-empty"><Icon name={icon} size={30} color="var(--text-faint)"/><div className="pf-empty-title">{title}</div><div className="pf-empty-msg">{message}</div></div>;
+}
+function Field({label,children}){ return <div className="pf-field"><label>{label}</label>{children}</div>; }
+
+/* ===================== Auth screen ===================== */
+function AuthScreen(){
+  const [mode,setMode] = useState("signin");
+  const [email,setEmail] = useState("");
+  const [password,setPassword] = useState("");
+  const [error,setError] = useState("");
+  const [notice,setNotice] = useState("");
+  const [busy,setBusy] = useState(false);
+
+  async function submit(e){
+    e.preventDefault();
+    setError(""); setNotice(""); setBusy(true);
+    try{
+      if(mode==="signin"){
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if(error) throw error;
+      } else {
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if(error) throw error;
+        if(data.user && !data.session){
+          setNotice("Account created. Check your email to confirm it, then sign in.");
+        }
+      }
+    }catch(err){
+      setError(err.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="pf-root">
+      <div className="pf-authwrap">
+        <div className="pf-authcard">
+          <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",marginBottom:6}}>
+            <Icon name="flame" size={26} color="var(--amber)"/>
+            <div style={{fontFamily:"Oswald,sans-serif",fontWeight:700,fontSize:24,letterSpacing:2}}>PCFORGE</div>
+          </div>
+          <div style={{textAlign:"center",fontFamily:"JetBrains Mono,monospace",fontSize:10,letterSpacing:2,color:"var(--text-faint)",textTransform:"uppercase",marginBottom:26}}>Parts · Builds · Profit</div>
+          <form onSubmit={submit}>
+            {error && <div className="pf-error">{error}</div>}
+            {notice && <div className="pf-error" style={{color:"var(--green)"}}>{notice}</div>}
+            <Field label="Email"><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} /></Field>
+            <Field label="Password"><input type="password" required minLength={6} value={password} onChange={e=>setPassword(e.target.value)} /></Field>
+            <button className="pf-btn pf-btn-primary pf-btn-block" disabled={busy} type="submit">
+              {busy ? "Please wait…" : mode==="signin" ? "Sign In" : "Create Account"}
+            </button>
+          </form>
+          <div className="pf-authtoggle" onClick={()=>{setMode(mode==="signin"?"signup":"signin"); setError(""); setNotice("");}}>
+            {mode==="signin" ? <>New here? <b>Create an account</b></> : <>Already have an account? <b>Sign in</b></>}
+          </div>
+          <div className="pf-authnote">If sign up doesn't log you in immediately, your Supabase project has email confirmation on — check your inbox, or turn it off under Authentication → Sign In / Providers → Email in the Supabase dashboard.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== Main App ===================== */
+function PcForgeApp({ user }){
+  const [tab,setTab] = useState("dashboard");
+  const [loading,setLoading] = useState(true);
+  const [store,setStore] = useState({ parts:[], builds:[], sales:[], expenses:[] });
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
+  const [modal,setModal] = useState(null);
+  const [form,setForm] = useState({});
+  const [formError,setFormError] = useState("");
+  const [search,setSearch] = useState("");
+  const [confirmKey,setConfirmKey] = useState(null);
+  const [expandedPart,setExpandedPart] = useState(null);
+
+  useEffect(()=>{
+    (async ()=>{
+      const { data, error } = await sb.from("pcforge_data").select("*").eq("user_id", user.id).maybeSingle();
+      if(error) console.error(error);
+      if(data){
+        setStore({ parts:data.parts||[], builds:data.builds||[], sales:data.sales||[], expenses:data.expenses||[] });
+      } else {
+        // first time this user has used the app — create their row
+        const initial = { user_id:user.id, parts:[], builds:[], sales:[], expenses:[] };
+        await sb.from("pcforge_data").upsert(initial, { onConflict:"user_id" });
+      }
+      setLoading(false);
+    })();
+  }, [user.id]);
+
+  function persist(which, data){
+    const updated = { ...storeRef.current, [which]: data };
+    setStore(updated);
+    sb.from("pcforge_data")
+      .upsert({ user_id:user.id, ...updated, updated_at:new Date().toISOString() }, { onConflict:"user_id" })
+      .then(({error})=>{ if(error) console.error("save failed", error); });
+  }
+
+  const { parts, builds, sales, expenses } = store;
+
+  function openModal(type,data={}){ setForm(data); setFormError(""); setModal({type}); }
+  function closeModal(){ setModal(null); setForm({}); setFormError(""); }
+  function setF(name,value){ setForm(prev=>({...prev,[name]:value})); }
+  function askConfirm(key,action){
+    if(confirmKey===key){ action(); setConfirmKey(null); } else { setConfirmKey(key); }
+  }
+
+  const stockValue = useMemo(()=>parts.reduce((s,p)=>s+p.qty*p.costPrice,0),[parts]);
+  const revenue = useMemo(()=>sales.reduce((s,x)=>s+x.total,0),[sales]);
+  const cogs = useMemo(()=>sales.reduce((s,x)=>s+x.cost,0),[sales]);
+  const grossProfit = revenue - cogs;
+  const totalExpenses = useMemo(()=>expenses.reduce((s,e)=>s+Number(e.amount),0),[expenses]);
+  const netProfit = grossProfit - totalExpenses;
+  const lowStock = useMemo(()=>parts.filter(p=>p.qty <= (p.lowStockThreshold ?? 2)),[parts]);
+  const activeBuilds = builds.filter(b=>b.status==="in_progress");
+  const soldBuilds = builds.filter(b=>b.status==="sold");
+  const recentActivity = useMemo(()=>{
+    const items = [
+      ...sales.map(s=>({...s, kind:"sale", sortDate:s.date})),
+      ...expenses.map(e=>({...e, kind:"expense", sortDate:e.date})),
+    ];
+    return items.sort((a,b)=>new Date(b.sortDate)-new Date(a.sortDate)).slice(0,8);
+  },[sales,expenses]);
+
+  function usedInBuilds(partId){
+    const rows = [];
+    builds.forEach(b=>{ b.parts.forEach(bp=>{ if(bp.partId===partId) rows.push({buildId:b.id,buildName:b.name,qty:bp.qty,status:b.status}); }); });
+    return rows;
+  }
+
+  /* ---- Actions ---- */
+  function submitPart(){
+    const name=(form.name||"").trim();
+    const category=form.category||CATEGORIES[0];
+    const qty=Number(form.qty??0);
+    const costPrice=Number(form.costPrice??0);
+    const sellPrice=Number(form.sellPrice??0);
+    const lowStockThreshold=Number(form.lowStockThreshold??2);
+    if(!name) return setFormError("Give this part a name.");
+    if(qty<0||costPrice<0||sellPrice<0) return setFormError("Values can't be negative.");
+    if(form.id){
+      persist("parts", parts.map(p=>p.id===form.id?{...p,name,category,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}:p));
+    } else {
+      persist("parts", [...parts,{id:uid(),name,category,qty,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}]);
+    }
+    closeModal();
+  }
+  function submitRestock(){
+    const addQty=Number(form.addQty??0);
+    const batchCost=Number(form.batchCost??0);
+    if(addQty<=0) return setFormError("Enter a quantity greater than zero.");
+    const part=parts.find(p=>p.id===form.id);
+    const newQty=part.qty+addQty;
+    const newCost=newQty>0?((part.qty*part.costPrice)+(addQty*batchCost))/newQty:batchCost;
+    persist("parts", parts.map(p=>p.id===part.id?{...p,qty:newQty,costPrice:newCost}:p));
+    closeModal();
+  }
+  function submitSellPart(){
+    const part=parts.find(p=>p.id===form.id);
+    const qty=Number(form.qty??0);
+    const unitPrice=Number(form.unitPrice??0);
+    if(qty<=0) return setFormError("Enter a quantity greater than zero.");
+    if(qty>part.qty) return setFormError(`Only ${part.qty} in stock.`);
+    const cost=part.costPrice*qty;
+    const total=unitPrice*qty;
+    const sale={id:uid(),date:form.date||todayStr(),type:"part",itemName:part.name,qty,unitCost:part.costPrice,unitPrice,cost,total,profit:total-cost,buyer:form.buyer||"",refId:part.id};
+    persist("parts", parts.map(p=>p.id===part.id?{...p,qty:p.qty-qty}:p));
+    persist("sales", [...sales, sale]);
+    closeModal();
+  }
+  function deletePart(id){ persist("parts", parts.filter(p=>p.id!==id)); }
+  function submitNewBuild(){
+    const name=(form.name||"").trim();
+    if(!name) return setFormError("Give this build a name.");
+    persist("builds", [...builds, {id:uid(),name,dateCreated:form.dateCreated||todayStr(),status:"in_progress",parts:[],notes:form.notes||"",salePrice:null,buyer:"",dateSold:null}]);
+    closeModal();
+  }
+  function submitAddBuildPart(){
+    const build=builds.find(b=>b.id===form.buildId);
+    const part=parts.find(p=>p.id===form.partId);
+    const qty=Number(form.qty??0);
+    if(!part) return setFormError("Choose a part.");
+    if(qty<=0) return setFormError("Enter a quantity greater than zero.");
+    if(qty>part.qty) return setFormError(`Only ${part.qty} in stock.`);
+    persist("builds", builds.map(b=>b.id===build.id?{...b,parts:[...b.parts,{partId:part.id,name:part.name,qty,unitCost:part.costPrice}]}:b));
+    persist("parts", parts.map(p=>p.id===part.id?{...p,qty:p.qty-qty}:p));
+    closeModal();
+  }
+  function removeBuildPart(buildId,index){
+    const build=builds.find(b=>b.id===buildId);
+    const entry=build.parts[index];
+    const part=parts.find(p=>p.id===entry.partId);
+    persist("builds", builds.map(b=>b.id===buildId?{...b,parts:b.parts.filter((_,i)=>i!==index)}:b));
+    if(part) persist("parts", parts.map(p=>p.id===part.id?{...p,qty:p.qty+entry.qty}:p));
+  }
+  function cancelBuild(buildId){
+    const build=builds.find(b=>b.id===buildId);
+    let updatedParts=parts;
+    build.parts.forEach(entry=>{ updatedParts=updatedParts.map(p=>p.id===entry.partId?{...p,qty:p.qty+entry.qty}:p); });
+    persist("parts", updatedParts);
+    persist("builds", builds.filter(b=>b.id!==buildId));
+  }
+  function deleteSoldBuild(buildId){
+    persist("builds", builds.filter(b=>b.id!==buildId));
+    persist("sales", sales.filter(s=>s.refId!==buildId));
+  }
+  function submitSellBuild(){
+    const build=builds.find(b=>b.id===form.id);
+    const salePrice=Number(form.salePrice??0);
+    if(salePrice<0) return setFormError("Sale price can't be negative.");
+    const totalCost=build.parts.reduce((s,bp)=>s+bp.unitCost*bp.qty,0);
+    const dateSold=form.dateSold||todayStr();
+    const buyer=form.buyer||"";
+    persist("builds", builds.map(b=>b.id===build.id?{...b,status:"sold",salePrice,buyer,dateSold}:b));
+    persist("sales", [...sales, {id:uid(),date:dateSold,type:"build",itemName:build.name,qty:1,unitCost:totalCost,unitPrice:salePrice,cost:totalCost,total:salePrice,profit:salePrice-totalCost,buyer,refId:build.id}]);
+    closeModal();
+  }
+  function submitExpense(){
+    const description=(form.description||"").trim();
+    const amount=Number(form.amount??0);
+    if(!description) return setFormError("Add a short description.");
+    if(amount<=0) return setFormError("Amount must be greater than zero.");
+    persist("expenses", [...expenses, {id:uid(),date:form.date||todayStr(),category:form.category||EXPENSE_CATEGORIES[0],description,amount}]);
+    closeModal();
+  }
+  function deleteExpense(id){ persist("expenses", expenses.filter(e=>e.id!==id)); }
+  function deleteSale(id){ persist("sales", sales.filter(s=>s.id!==id)); }
+
+  const filteredParts = parts.filter(p=>{
+    const q=search.trim().toLowerCase();
+    if(!q) return true;
+    return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
+  });
+
+  if(loading){
+    return <div className="pf-root"><div className="pf-shell" style={{alignItems:"center",justifyContent:"center",display:"flex"}}>
+      <div style={{fontFamily:"JetBrains Mono, monospace",color:"var(--amber)",fontSize:12,letterSpacing:2}}>LOADING PCFORGE…</div>
+    </div></div>;
+  }
+
+  return (
+    <div className="pf-root">
+      <div className="pf-shell">
+        <div className="pf-header">
+          <div className="pf-header-row">
+            <div className="pf-logo">
+              <Icon name="flame" size={22} color="var(--amber)"/>
+              <div>
+                <div className="pf-logo-text">PCFORGE</div>
+                <div className="pf-logo-sub" onClick={()=>sb.auth.signOut()}>{user.email} · sign out</div>
+              </div>
+            </div>
+            <div className="pf-header-net">
+              <div className="pf-header-net-label">Net Profit</div>
+              <div className="pf-header-net-value" style={{color: netProfit>=0 ? "var(--green)" : "var(--ember)"}}>{fmtR(netProfit)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="pf-content">
+          {tab==="dashboard" && (
+            <Dashboard stockValue={stockValue} revenue={revenue} netProfit={netProfit} totalExpenses={totalExpenses}
+              lowStock={lowStock} recentActivity={recentActivity} activeBuildsCount={activeBuilds.length} />
+          )}
+          {tab==="inventory" && (
+            <InventoryTab parts={filteredParts} search={search} setSearch={setSearch} openModal={openModal}
+              askConfirm={askConfirm} deletePart={deletePart} expandedPart={expandedPart} setExpandedPart={setExpandedPart}
+              usedInBuilds={usedInBuilds} />
+          )}
+          {tab==="builds" && (
+            <BuildsTab activeBuilds={activeBuilds} soldBuilds={soldBuilds} openModal={openModal} askConfirm={askConfirm}
+              removeBuildPart={removeBuildPart} cancelBuild={cancelBuild} deleteSoldBuild={deleteSoldBuild} />
+          )}
+          {tab==="sales" && <SalesTab sales={sales} askConfirm={askConfirm} deleteSale={deleteSale} />}
+          {tab==="expenses" && (
+            <ExpensesTab expenses={expenses} totalExpenses={totalExpenses} openModal={openModal} askConfirm={askConfirm} deleteExpense={deleteExpense} />
+          )}
+        </div>
+
+        <div className="pf-bottomnav">
+          <NavBtn icon="dashboard" label="Dashboard" active={tab==="dashboard"} onClick={()=>setTab("dashboard")} />
+          <NavBtn icon="package" label="Inventory" active={tab==="inventory"} onClick={()=>setTab("inventory")} />
+          <NavBtn icon="wrench" label="Builds" active={tab==="builds"} onClick={()=>setTab("builds")} />
+          <NavBtn icon="cart" label="Sales" active={tab==="sales"} onClick={()=>setTab("sales")} />
+          <NavBtn icon="receipt" label="Expenses" active={tab==="expenses"} onClick={()=>setTab("expenses")} />
+        </div>
+      </div>
+
+      {modal && (
+        <ModalRenderer modal={modal} form={form} setF={setF} formError={formError} closeModal={closeModal}
+          parts={parts} builds={builds} submitPart={submitPart} submitRestock={submitRestock} submitSellPart={submitSellPart}
+          submitNewBuild={submitNewBuild} submitAddBuildPart={submitAddBuildPart} submitSellBuild={submitSellBuild}
+          submitExpense={submitExpense} />
+      )}
+    </div>
+  );
+}
+
+function NavBtn({icon,label,active,onClick}){
+  return <button className={`pf-navbtn ${active?"active":""}`} onClick={onClick}>
+    <Icon name={icon} size={18} color={active?"var(--amber)":"var(--text-faint)"}/>
+    <span>{label}</span>
+  </button>;
+}
+
+function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentActivity,activeBuildsCount}){
+  return (
+    <>
+      <div className="pf-section-title"><Icon name="dashboard" size={13}/> Readout</div>
+      <div className="pf-statgrid">
+        <StatCard label="Stock Value" value={fmtR(stockValue)} sub="cost basis" accent="blue" />
+        <StatCard label="Revenue" value={fmtR(revenue)} sub="all-time" accent="amber" />
+        <StatCard label="Net Profit" value={fmtR(netProfit)} sub="after expenses" accent={netProfit>=0?"green":"ember"} glow />
+        <StatCard label="Expenses" value={fmtR(totalExpenses)} sub="all-time" accent="ember" />
+      </div>
+      <div className="pf-section-title"><Icon name="alert" size={13}/> Low Stock ({lowStock.length})</div>
+      {lowStock.length===0 ? (
+        <div className="pf-card" style={{color:"var(--text-faint)",fontSize:12}}>Nothing running low. Shelves look healthy.</div>
+      ) : (
+        <div className="pf-card">{lowStock.map(p=>(
+          <div key={p.id} className="pf-lowstock-row"><span style={{fontSize:13}}>{p.name}</span><Badge tone="ember">{p.qty} left</Badge></div>
+        ))}</div>
+      )}
+      <div className="pf-section-title"><Icon name="wrench" size={13}/> Builds In Progress ({activeBuildsCount})</div>
+      <div className="pf-section-title"><Icon name="trend" size={13}/> Recent Activity</div>
+      <div className="pf-card">
+        {recentActivity.length===0 ? (
+          <div style={{color:"var(--text-faint)",fontSize:12}}>Nothing logged yet. Sales and expenses will show up here.</div>
+        ) : recentActivity.map(item=>(
+          <div className="pf-activity-row" key={item.kind+item.id}>
+            <div className="pf-activity-icon" style={{background: item.kind==="sale"?"rgba(124,179,92,0.12)":"rgba(255,90,54,0.12)"}}>
+              <Icon name={item.kind==="sale"?"arrowUp":"arrowDown"} size={14} color={item.kind==="sale"?"var(--green)":"var(--ember)"} />
+            </div>
+            <div className="pf-activity-text">
+              {item.kind==="sale" ? <><b>Sold</b> {item.itemName} · {fmtDate(item.date)}</> : <><b>{item.category}</b> — {item.description} · {fmtDate(item.date)}</>}
+            </div>
+            <div className="pf-activity-amt" style={{color:item.kind==="sale"?"var(--green)":"var(--ember)"}}>
+              {item.kind==="sale"?"+":"-"}{fmtR(item.kind==="sale"?item.total:item.amount)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function InventoryTab({parts,search,setSearch,openModal,askConfirm,deletePart,expandedPart,setExpandedPart,usedInBuilds}){
+  return (
+    <>
+      <div className="pf-search"><Icon name="search" size={14} color="var(--text-faint)"/><input placeholder="Search parts…" value={search} onChange={e=>setSearch(e.target.value)} /></div>
+      <button className="pf-btn pf-btn-primary pf-btn-block" onClick={()=>openModal("addPart")}><Icon name="plus" size={15}/> Add Part</button>
+      <div style={{marginTop:16}}>
+        {parts.length===0 ? (
+          <EmptyState icon="package" title="Shelf's empty" message="Add your first component to start tracking stock, cost and margin." />
+        ) : (
+          <div className="pf-card">
+            {parts.map(p=>{
+              const low = p.qty <= (p.lowStockThreshold ?? 2);
+              const used = expandedPart===p.id ? usedInBuilds(p.id) : [];
+              return (
+                <div className="pf-listitem" key={p.id}>
+                  <div className="pf-listitem-top">
+                    <div>
+                      <div className="pf-listitem-name">{p.name}</div>
+                      <div className="pf-listitem-meta">{p.category} · cost {fmtR(p.costPrice)} · sell {fmtR(p.sellPrice)}</div>
+                    </div>
+                    <Badge tone={low?"ember":hashAccent(p.category)}>{p.qty} in stock</Badge>
+                  </div>
+                  <div className="pf-stockbar"><div className="pf-stockbar-fill" style={{width:`${Math.min(100,(p.qty/Math.max((p.lowStockThreshold||2)*3,6))*100)}%`, background: low?"var(--ember)":"var(--amber)"}} /></div>
+                  <div className="pf-listitem-actions">
+                    <button className="pf-btn pf-btn-sm" onClick={()=>openModal("restock",{id:p.id,batchCost:p.costPrice})}>Restock</button>
+                    <button className="pf-btn pf-btn-sm" onClick={()=>openModal("sellPart",{id:p.id,qty:1,unitPrice:p.sellPrice,date:todayStr()})} disabled={p.qty===0}>Sell</button>
+                    <button className="pf-iconbtn" onClick={()=>openModal("addPart",{...p})}><Icon name="pencil" size={13}/></button>
+                    <button className="pf-iconbtn" onClick={()=>askConfirm("part-"+p.id, ()=>deletePart(p.id))}><Icon name="trash" size={13}/></button>
+                    <div className="pf-expand" onClick={()=>setExpandedPart(expandedPart===p.id?null:p.id)}>
+                      <Icon name={expandedPart===p.id?"chevronDown":"chevronRight"} size={12}/> used in builds
+                    </div>
+                  </div>
+                  {expandedPart===p.id && (
+                    <div className="pf-usedin">
+                      {used.length===0 ? <div style={{fontSize:11,color:"var(--text-faint)",fontFamily:"JetBrains Mono, monospace"}}>Not used in any build yet.</div>
+                       : used.map((u,i)=>(
+                        <div className="pf-usedin-row" key={i}><span>{u.buildName} ×{u.qty}</span><Badge tone={u.status==="sold"?"green":"amber"}>{u.status==="sold"?"sold":"in progress"}</Badge></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function BuildsTab({activeBuilds,soldBuilds,openModal,askConfirm,removeBuildPart,cancelBuild,deleteSoldBuild}){
+  return (
+    <>
+      <button className="pf-btn pf-btn-primary pf-btn-block" onClick={()=>openModal("newBuild",{dateCreated:todayStr()})}><Icon name="plus" size={15}/> New Build</button>
+      <div className="pf-section-title"><Icon name="wrench" size={13}/> In Progress ({activeBuilds.length})</div>
+      {activeBuilds.length===0 ? (
+        <EmptyState icon="wrench" title="No builds in progress" message="Start a build and pull parts straight from inventory." />
+      ) : activeBuilds.map(b=>{
+        const totalCost=b.parts.reduce((s,bp)=>s+bp.unitCost*bp.qty,0);
+        return (
+          <div className="pf-card" key={b.id}>
+            <div className="pf-listitem-top">
+              <div><div className="pf-listitem-name">{b.name}</div><div className="pf-listitem-meta">started {fmtDate(b.dateCreated)}</div></div>
+              <Badge tone="amber">In Progress</Badge>
+            </div>
+            <div className="pf-buildparts">
+              {b.parts.length===0 ? <div style={{fontSize:11,color:"var(--text-faint)"}}>No parts added yet.</div>
+               : b.parts.map((bp,i)=>(
+                <div className="pf-buildpart-row" key={i}>
+                  <span><b>{bp.name}</b> ×{bp.qty}</span>
+                  <span style={{display:"flex",alignItems:"center",gap:8}}>{fmtR(bp.unitCost*bp.qty)}<span style={{cursor:"pointer"}} onClick={()=>removeBuildPart(b.id,i)}><Icon name="x" size={12} color="var(--text-faint)"/></span></span>
+                </div>
+              ))}
+            </div>
+            <div className="pf-totalbar"><span>Total cost</span><b>{fmtR(totalCost)}</b></div>
+            <div className="pf-listitem-actions">
+              <button className="pf-btn pf-btn-sm" onClick={()=>openModal("addBuildPart",{buildId:b.id,qty:1})}>+ Add Part</button>
+              <button className="pf-btn pf-btn-sm pf-btn-primary" onClick={()=>openModal("sellBuild",{id:b.id,salePrice:"",dateSold:todayStr()})}>Mark Sold</button>
+              <button className="pf-btn pf-btn-sm pf-btn-danger" onClick={()=>askConfirm("cancelbuild-"+b.id, ()=>cancelBuild(b.id))}>Cancel Build</button>
+            </div>
+          </div>
+        );
+      })}
+      <div className="pf-section-title"><Icon name="check" size={13}/> Sold ({soldBuilds.length})</div>
+      {soldBuilds.length===0 ? (
+        <div className="pf-card" style={{color:"var(--text-faint)",fontSize:12}}>No builds sold yet.</div>
+      ) : soldBuilds.map(b=>{
+        const totalCost=b.parts.reduce((s,bp)=>s+bp.unitCost*bp.qty,0);
+        const profit=b.salePrice-totalCost;
+        return (
+          <div className="pf-card" key={b.id}>
+            <div className="pf-listitem-top">
+              <div><div className="pf-listitem-name">{b.name}</div><div className="pf-listitem-meta">sold {fmtDate(b.dateSold)}{b.buyer?` · ${b.buyer}`:""}</div></div>
+              <Badge tone="green">Sold</Badge>
+            </div>
+            <div className="pf-buildparts">{b.parts.map((bp,i)=>(<div className="pf-buildpart-row" key={i}><span><b>{bp.name}</b> ×{bp.qty}</span><span>{fmtR(bp.unitCost*bp.qty)}</span></div>))}</div>
+            <div className="pf-totalbar"><span>Cost</span><b>{fmtR(totalCost)}</b></div>
+            <div className="pf-totalbar"><span>Sold for</span><b>{fmtR(b.salePrice)}</b></div>
+            <div className="pf-totalbar"><span>Profit</span><b style={{color:profit>=0?"var(--green)":"var(--ember)"}}>{fmtR(profit)}</b></div>
+            <div className="pf-listitem-actions">
+              <button className="pf-btn pf-btn-sm pf-btn-danger" onClick={()=>askConfirm("delbuild-"+b.id, ()=>deleteSoldBuild(b.id))}>Delete Record</button>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function SalesTab({sales,askConfirm,deleteSale}){
+  const sorted=[...sales].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const totalRevenue=sales.reduce((s,x)=>s+x.total,0);
+  const totalProfit=sales.reduce((s,x)=>s+x.profit,0);
+  return (
+    <>
+      <div className="pf-statgrid">
+        <StatCard label="Revenue" value={fmtR(totalRevenue)} accent="amber" />
+        <StatCard label="Gross Profit" value={fmtR(totalProfit)} accent={totalProfit>=0?"green":"ember"} />
+      </div>
+      <div className="pf-section-title"><Icon name="cart" size={13}/> Sales Log ({sorted.length})</div>
+      {sorted.length===0 ? (
+        <EmptyState icon="cart" title="No sales yet" message="Sell a part from Inventory or mark a build as sold — it'll show up here." />
+      ) : (
+        <div className="pf-card">{sorted.map(s=>(
+          <div className="pf-listitem" key={s.id}>
+            <div className="pf-listitem-top">
+              <div><div className="pf-listitem-name">{s.itemName}</div><div className="pf-listitem-meta">{fmtDate(s.date)} · {s.type==="build"?"build":`×${s.qty} part`}{s.buyer?` · ${s.buyer}`:""}</div></div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontFamily:"JetBrains Mono, monospace",fontWeight:600}}>{fmtR(s.total)}</div>
+                <div style={{fontFamily:"JetBrains Mono, monospace",fontSize:11,color:s.profit>=0?"var(--green)":"var(--ember)"}}>{s.profit>=0?"+":""}{fmtR(s.profit)} profit</div>
+              </div>
+            </div>
+            <div className="pf-listitem-actions"><button className="pf-btn pf-btn-sm pf-btn-danger" onClick={()=>askConfirm("sale-"+s.id, ()=>deleteSale(s.id))}>Delete</button></div>
+          </div>
+        ))}</div>
+      )}
+    </>
+  );
+}
+
+function ExpensesTab({expenses,totalExpenses,openModal,askConfirm,deleteExpense}){
+  const sorted=[...expenses].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return (
+    <>
+      <StatCard label="Total Expenses" value={fmtR(totalExpenses)} accent="ember" />
+      <button className="pf-btn pf-btn-primary pf-btn-block" style={{marginTop:14}} onClick={()=>openModal("addExpense",{date:todayStr()})}><Icon name="plus" size={15}/> Add Expense</button>
+      <div className="pf-section-title"><Icon name="receipt" size={13}/> Expense Log ({sorted.length})</div>
+      {sorted.length===0 ? (
+        <EmptyState icon="receipt" title="No expenses logged" message="Rent, tools, shipping, software — log anything that eats into profit." />
+      ) : (
+        <div className="pf-card">{sorted.map(e=>(
+          <div className="pf-listitem" key={e.id}>
+            <div className="pf-listitem-top">
+              <div><div className="pf-listitem-name">{e.description}</div><div className="pf-listitem-meta">{fmtDate(e.date)}</div></div>
+              <div style={{textAlign:"right"}}><Badge tone="ember">{e.category}</Badge><div style={{fontFamily:"JetBrains Mono, monospace",fontWeight:600,marginTop:6}}>{fmtR(e.amount)}</div></div>
+            </div>
+            <div className="pf-listitem-actions"><button className="pf-btn pf-btn-sm pf-btn-danger" onClick={()=>askConfirm("exp-"+e.id, ()=>deleteExpense(e.id))}>Delete</button></div>
+          </div>
+        ))}</div>
+      )}
+    </>
+  );
+}
+
+function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submitPart,submitRestock,submitSellPart,submitNewBuild,submitAddBuildPart,submitSellBuild,submitExpense}){
+  const {type}=modal;
+  const titles={ addPart: form.id?"Edit Part":"Add Part", restock:"Restock", sellPart:"Sell Part", newBuild:"New Build", addBuildPart:"Add Part To Build", sellBuild:"Mark Build Sold", addExpense:"Add Expense" };
+  const part = form.id && (type==="restock"||type==="sellPart") ? parts.find(p=>p.id===form.id) : null;
+  const build = form.id && type==="sellBuild" ? builds.find(b=>b.id===form.id) : null;
+  const availableParts = parts.filter(p=>p.qty>0);
+
+  function submit(){
+    if(type==="addPart") submitPart();
+    else if(type==="restock") submitRestock();
+    else if(type==="sellPart") submitSellPart();
+    else if(type==="newBuild") submitNewBuild();
+    else if(type==="addBuildPart") submitAddBuildPart();
+    else if(type==="sellBuild") submitSellBuild();
+    else if(type==="addExpense") submitExpense();
+  }
+
+  return (
+    <div className="pf-overlay" onClick={e=>{ if(e.target===e.currentTarget) closeModal(); }}>
+      <div className="pf-modal">
+        <div className="pf-modal-header"><div className="pf-modal-title">{titles[type]}</div><button className="pf-iconbtn" onClick={closeModal}><Icon name="x" size={16}/></button></div>
+        {formError && <div className="pf-error">{formError}</div>}
+
+        {type==="addPart" && (<>
+          <Field label="Name"><input value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="e.g. Ryzen 5 5600" /></Field>
+          <Field label="Category"><select value={form.category||CATEGORIES[0]} onChange={e=>setF("category",e.target.value)}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
+          {!form.id && <Field label="Starting Qty"><input type="number" min="0" value={form.qty??0} onChange={e=>setF("qty",e.target.value)} /></Field>}
+          <div className="pf-field-row">
+            <Field label="Cost Price (R)"><input type="number" min="0" step="0.01" value={form.costPrice??""} onChange={e=>setF("costPrice",e.target.value)} /></Field>
+            <Field label="Sell Price (R)"><input type="number" min="0" step="0.01" value={form.sellPrice??""} onChange={e=>setF("sellPrice",e.target.value)} /></Field>
+          </div>
+          <Field label="Low Stock Alert Below"><input type="number" min="0" value={form.lowStockThreshold??2} onChange={e=>setF("lowStockThreshold",e.target.value)} /></Field>
+          <Field label="Notes (optional)"><textarea rows={2} value={form.notes||""} onChange={e=>setF("notes",e.target.value)} /></Field>
+        </>)}
+
+        {type==="restock" && part && (<>
+          <div style={{fontSize:13,color:"var(--text-dim)",marginBottom:10}}>{part.name} — currently {part.qty} in stock</div>
+          <Field label="Quantity To Add"><input type="number" min="1" value={form.addQty??""} onChange={e=>setF("addQty",e.target.value)} /></Field>
+          <Field label="Cost Per Unit This Batch (R)"><input type="number" min="0" step="0.01" value={form.batchCost??part.costPrice} onChange={e=>setF("batchCost",e.target.value)} /></Field>
+        </>)}
+
+        {type==="sellPart" && part && (<>
+          <div style={{fontSize:13,color:"var(--text-dim)",marginBottom:10}}>{part.name} — {part.qty} in stock</div>
+          <div className="pf-field-row">
+            <Field label="Quantity"><input type="number" min="1" max={part.qty} value={form.qty??1} onChange={e=>setF("qty",e.target.value)} /></Field>
+            <Field label="Sell Price / Unit (R)"><input type="number" min="0" step="0.01" value={form.unitPrice??part.sellPrice} onChange={e=>setF("unitPrice",e.target.value)} /></Field>
+          </div>
+          <Field label="Buyer (optional)"><input value={form.buyer||""} onChange={e=>setF("buyer",e.target.value)} /></Field>
+          <Field label="Date"><input type="date" value={form.date||todayStr()} onChange={e=>setF("date",e.target.value)} /></Field>
+        </>)}
+
+        {type==="newBuild" && (<>
+          <Field label="Build Name"><input value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="e.g. Client Gaming Rig #4" /></Field>
+          <Field label="Date Started"><input type="date" value={form.dateCreated||todayStr()} onChange={e=>setF("dateCreated",e.target.value)} /></Field>
+          <Field label="Notes (optional)"><textarea rows={2} value={form.notes||""} onChange={e=>setF("notes",e.target.value)} /></Field>
+        </>)}
+
+        {type==="addBuildPart" && (<>
+          <Field label="Part">
+            <select value={form.partId||""} onChange={e=>setF("partId",e.target.value)}>
+              <option value="">Select a part…</option>
+              {availableParts.map(p=><option key={p.id} value={p.id}>{p.name} ({p.qty} in stock)</option>)}
+            </select>
+          </Field>
+          <Field label="Quantity"><input type="number" min="1" value={form.qty??1} onChange={e=>setF("qty",e.target.value)} /></Field>
+        </>)}
+
+        {type==="sellBuild" && build && (<>
+          <div style={{fontSize:13,color:"var(--text-dim)",marginBottom:10}}>{build.name} — total part cost {fmtR(build.parts.reduce((s,bp)=>s+bp.unitCost*bp.qty,0))}</div>
+          <Field label="Sale Price (R)"><input type="number" min="0" step="0.01" value={form.salePrice??""} onChange={e=>setF("salePrice",e.target.value)} /></Field>
+          <Field label="Buyer (optional)"><input value={form.buyer||""} onChange={e=>setF("buyer",e.target.value)} /></Field>
+          <Field label="Date Sold"><input type="date" value={form.dateSold||todayStr()} onChange={e=>setF("dateSold",e.target.value)} /></Field>
+        </>)}
+
+        {type==="addExpense" && (<>
+          <Field label="Description"><input value={form.description||""} onChange={e=>setF("description",e.target.value)} placeholder="e.g. Courier fee for parts order" /></Field>
+          <Field label="Category"><select value={form.category||EXPENSE_CATEGORIES[0]} onChange={e=>setF("category",e.target.value)}>{EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
+          <div className="pf-field-row">
+            <Field label="Amount (R)"><input type="number" min="0" step="0.01" value={form.amount??""} onChange={e=>setF("amount",e.target.value)} /></Field>
+            <Field label="Date"><input type="date" value={form.date||todayStr()} onChange={e=>setF("date",e.target.value)} /></Field>
+          </div>
+        </>)}
+
+        <div className="pf-modal-actions">
+          <button className="pf-btn pf-btn-ghost" style={{flex:1}} onClick={closeModal}>Cancel</button>
+          <button className="pf-btn pf-btn-primary" style={{flex:1}} onClick={submit}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== Root: auth gate ===================== */
+function Root(){
+  const [user,setUser] = useState(undefined); // undefined = checking, null = signed out
+  useEffect(()=>{
+    sb.auth.getSession().then(({data:{session}})=>setUser(session?.user ?? null));
+    const { data: listener } = sb.auth.onAuthStateChange((_event, session)=>{
+      setUser(session?.user ?? null);
+    });
+    return ()=>listener.subscription.unsubscribe();
+  },[]);
+  if(user===undefined){
+    return <div className="pf-root"><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"JetBrains Mono, monospace",color:"var(--amber)",fontSize:12,letterSpacing:2}}>LOADING…</div></div>;
+  }
+  return user ? <PcForgeApp user={user} /> : <AuthScreen />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+</script>
+</body>
+</html>
