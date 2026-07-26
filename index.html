@@ -70,6 +70,7 @@ min-height:100vh; display:flex; justify-content:center;
 .pf-listitem{ border-bottom:1px solid var(--border-soft); padding:12px 0; }
 .pf-listitem:last-child{ border-bottom:none; }
 .pf-listitem-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.pf-listitem-topleft{ display:flex; gap:10px; align-items:flex-start; min-width:0; }
 .pf-listitem-name{ font-weight:600; font-size:14px; }
 .pf-listitem-meta{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); margin-top:3px; }
 .pf-listitem-actions{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center; }
@@ -112,6 +113,14 @@ min-height:100vh; display:flex; justify-content:center;
 .pf-authtoggle{ text-align:center; margin-top:14px; font-size:12px; color:var(--text-faint); cursor:pointer; }
 .pf-authtoggle b{ color:var(--amber); }
 .pf-authnote{ font-size:11px; color:var(--text-faint); text-align:center; margin-top:16px; line-height:1.5; }
+.pf-thumb{ width:46px; height:46px; object-fit:cover; border:1px solid var(--border); border-radius:2px; flex-shrink:0; background:var(--surface2); }
+.pf-thumb-placeholder{ width:46px; height:46px; border:1px solid var(--border); border-radius:2px; flex-shrink:0; background:var(--surface2); display:flex; align-items:center; justify-content:center; }
+.pf-photo-preview{ width:100%; max-height:160px; object-fit:cover; border:1px solid var(--border); border-radius:2px; margin-top:8px; }
+.pf-comparecard{ background:var(--surface); border:1px solid var(--border); padding:12px; }
+.pf-comparecard-label{ font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin-bottom:8px; }
+.pf-compare-row{ display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); padding:3px 0; }
+.pf-compare-row b{ color:var(--text); font-weight:600; }
+.pf-compare-delta{ font-family:'JetBrains Mono',monospace; font-size:12px; text-align:center; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
 </style>
 </head>
 <body>
@@ -129,12 +138,55 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 /* ===================== Helpers ===================== */
 const CATEGORIES = ["CPU","GPU","Motherboard","RAM","Storage","PSU","Case","Cooling","Peripherals","Cables/Other"];
 const EXPENSE_CATEGORIES = ["Rent","Tools/Equipment","Shipping","Software","Marketing","Utilities","Fees","Other"];
+const SUPPLIERS = ["Facebook","Yaga","Bobshop","Syntech","Carbonite","Other"];
 const ACCENTS = ["amber","blue","green"];
 function hashAccent(str){ let h=0; for(const c of String(str)) h=(h+c.charCodeAt(0))%ACCENTS.length; return ACCENTS[h]; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function fmtR(n){ const v=Number(n||0); return "R "+v.toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtDate(d){ if(!d) return "—"; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}); }
+
+/* Resize + compress a photo before storing, so the database row stays small */
+function resizeImageFile(file, maxDim=480, quality=0.7){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w=img.width, h=img.height;
+        if(w>h){ if(w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; } }
+        else { if(h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; } }
+        const canvas=document.createElement("canvas");
+        canvas.width=w; canvas.height=h;
+        canvas.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL("image/jpeg",quality));
+      };
+      img.onerror=reject;
+      img.src=e.target.result;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* Month-over-month comparison helpers */
+function getMonthBounds(monthOffset){
+  const now=new Date();
+  const d=new Date(now.getFullYear(), now.getMonth()+monthOffset, 1);
+  const start=new Date(d.getFullYear(), d.getMonth(), 1);
+  const end=new Date(d.getFullYear(), d.getMonth()+1, 1);
+  const label=d.toLocaleDateString("en-ZA",{month:"long",year:"numeric"});
+  return { start, end, label };
+}
+function sumInRange(sales, expenses, start, end){
+  const inRange = (dateStr)=>{ const dt=new Date(dateStr); return dt>=start && dt<end; };
+  const periodSales = sales.filter(s=>inRange(s.date));
+  const revenue = periodSales.reduce((s,x)=>s+x.total,0);
+  const cost = periodSales.reduce((s,x)=>s+x.cost,0);
+  const periodExpenses = expenses.filter(e=>inRange(e.date)).reduce((s,e)=>s+Number(e.amount),0);
+  const profit = revenue-cost-periodExpenses;
+  return { revenue, cost, expenses:periodExpenses, profit };
+}
 
 /* ===================== Minimal icon set (no external deps) ===================== */
 function Icon({ name, size=16, color="currentColor" }){
@@ -158,6 +210,7 @@ function Icon({ name, size=16, color="currentColor" }){
     case "check": return <svg {...common}><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>;
     case "arrowUp": return <svg {...common}><path d="M7 17L17 7M7 7h10v10"/></svg>;
     case "arrowDown": return <svg {...common}><path d="M7 7l10 10M17 7v10H7"/></svg>;
+    case "camera": return <svg {...common}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>;
     default: return null;
   }
 }
@@ -178,6 +231,9 @@ function EmptyState({icon,title,message}){
   return <div className="pf-empty"><Icon name={icon} size={30} color="var(--text-faint)"/><div className="pf-empty-title">{title}</div><div className="pf-empty-msg">{message}</div></div>;
 }
 function Field({label,children}){ return <div className="pf-field"><label>{label}</label>{children}</div>; }
+function Thumb({src}){
+  return src ? <img className="pf-thumb" src={src} alt="" /> : <div className="pf-thumb-placeholder"><Icon name="camera" size={16} color="var(--text-faint)"/></div>;
+}
 
 /* ===================== Auth screen ===================== */
 function AuthScreen(){
@@ -259,7 +315,6 @@ function PcForgeApp({ user }){
         storeRef.current = loaded;
         setStore(loaded);
       } else {
-        // first time this user has used the app — create their row
         const initial = { user_id:user.id, parts:[], builds:[], sales:[], expenses:[] };
         await sb.from("pcforge_data").upsert(initial, { onConflict:"user_id" });
       }
@@ -267,15 +322,6 @@ function PcForgeApp({ user }){
     })();
   }, [user.id]);
 
-  // FIX: storeRef.current is now updated synchronously inside persist() itself,
-  // instead of only at render time. Previously, when a single action called
-  // persist() twice in a row (e.g. adding a part to a build: once for "builds",
-  // once for "parts"), the second call read a stale storeRef.current (because
-  // React batches the setStore from the first call and hasn't re-rendered yet).
-  // That meant the second upsert/setStore silently overwrote the first change,
-  // both locally and in Supabase — e.g. stock got decremented but the part
-  // never actually landed in the build. Updating storeRef.current immediately
-  // fixes this race for every function that persists more than one slice.
   function persist(which, data){
     const updated = { ...storeRef.current, [which]: data };
     storeRef.current = updated;
@@ -322,6 +368,8 @@ function PcForgeApp({ user }){
   function submitPart(){
     const name=(form.name||"").trim();
     const category=form.category||CATEGORIES[0];
+    const supplier=form.supplier||SUPPLIERS[0];
+    const photo=form.photo||null;
     const qty=Number(form.qty??0);
     const costPrice=Number(form.costPrice??0);
     const sellPrice=Number(form.sellPrice??0);
@@ -329,9 +377,9 @@ function PcForgeApp({ user }){
     if(!name) return setFormError("Give this part a name.");
     if(qty<0||costPrice<0||sellPrice<0) return setFormError("Values can't be negative.");
     if(form.id){
-      persist("parts", parts.map(p=>p.id===form.id?{...p,name,category,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}:p));
+      persist("parts", parts.map(p=>p.id===form.id?{...p,name,category,supplier,photo,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}:p));
     } else {
-      persist("parts", [...parts,{id:uid(),name,category,qty,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}]);
+      persist("parts", [...parts,{id:uid(),name,category,supplier,photo,qty,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}]);
     }
     closeModal();
   }
@@ -366,7 +414,7 @@ function PcForgeApp({ user }){
   function submitNewBuild(){
     const name=(form.name||"").trim();
     if(!name) return setFormError("Give this build a name.");
-    persist("builds", [...builds, {id:uid(),name,dateCreated:form.dateCreated||todayStr(),status:"in_progress",parts:[],notes:form.notes||"",salePrice:null,buyer:"",dateSold:null}]);
+    persist("builds", [...builds, {id:uid(),name,dateCreated:form.dateCreated||todayStr(),status:"in_progress",parts:[],notes:form.notes||"",photo:form.photo||null,salePrice:null,buyer:"",dateSold:null}]);
     closeModal();
   }
 
@@ -430,7 +478,7 @@ function PcForgeApp({ user }){
   const filteredParts = parts.filter(p=>{
     const q=search.trim().toLowerCase();
     if(!q) return true;
-    return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
+    return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || (p.supplier||"").toLowerCase().includes(q);
   });
 
   if(loading){
@@ -461,7 +509,8 @@ function PcForgeApp({ user }){
         <div className="pf-content">
           {tab==="dashboard" && (
             <Dashboard stockValue={stockValue} revenue={revenue} netProfit={netProfit} totalExpenses={totalExpenses}
-              lowStock={lowStock} recentActivity={recentActivity} activeBuildsCount={activeBuilds.length} />
+              lowStock={lowStock} recentActivity={recentActivity} activeBuildsCount={activeBuilds.length}
+              sales={sales} expenses={expenses} />
           )}
           {tab==="inventory" && (
             <InventoryTab parts={filteredParts} search={search} setSearch={setSearch} openModal={openModal}
@@ -504,7 +553,40 @@ function NavBtn({icon,label,active,onClick}){
   </button>;
 }
 
-function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentActivity,activeBuildsCount}){
+function MonthCompare({sales,expenses}){
+  const thisMonth = useMemo(()=>getMonthBounds(0),[]);
+  const lastMonth = useMemo(()=>getMonthBounds(-1),[]);
+  const curr = useMemo(()=>sumInRange(sales,expenses,thisMonth.start,thisMonth.end),[sales,expenses,thisMonth]);
+  const prev = useMemo(()=>sumInRange(sales,expenses,lastMonth.start,lastMonth.end),[sales,expenses,lastMonth]);
+  const delta = curr.profit - prev.profit;
+  const deltaPct = prev.profit !== 0 ? Math.round((delta/Math.abs(prev.profit))*100) : (curr.profit!==0 ? 100 : 0);
+  const up = delta >= 0;
+
+  return (
+    <>
+      <div className="pf-section-title"><Icon name="trend" size={13}/> This Month vs Last Month</div>
+      <div className="pf-statgrid">
+        <div className="pf-comparecard">
+          <div className="pf-comparecard-label">{thisMonth.label}</div>
+          <div className="pf-compare-row"><span>Revenue</span><b>{fmtR(curr.revenue)}</b></div>
+          <div className="pf-compare-row"><span>Expenses</span><b>{fmtR(curr.expenses)}</b></div>
+          <div className="pf-compare-row"><span>Profit</span><b style={{color:curr.profit>=0?"var(--green)":"var(--ember)"}}>{fmtR(curr.profit)}</b></div>
+        </div>
+        <div className="pf-comparecard">
+          <div className="pf-comparecard-label">{lastMonth.label}</div>
+          <div className="pf-compare-row"><span>Revenue</span><b>{fmtR(prev.revenue)}</b></div>
+          <div className="pf-compare-row"><span>Expenses</span><b>{fmtR(prev.expenses)}</b></div>
+          <div className="pf-compare-row"><span>Profit</span><b style={{color:prev.profit>=0?"var(--green)":"var(--ember)"}}>{fmtR(prev.profit)}</b></div>
+        </div>
+      </div>
+      <div className="pf-comparecard pf-compare-delta" style={{color: up ? "var(--green)" : "var(--ember)"}}>
+        {up ? "▲" : "▼"} {up?"+":""}{fmtR(delta)} vs last month {prev.profit!==0 ? `(${deltaPct>=0?"+":""}${deltaPct}%)` : ""}
+      </div>
+    </>
+  );
+}
+
+function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentActivity,activeBuildsCount,sales,expenses}){
   return (
     <>
       <div className="pf-section-title"><Icon name="dashboard" size={13}/> Readout</div>
@@ -514,6 +596,8 @@ function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentAc
         <StatCard label="Net Profit" value={fmtR(netProfit)} sub="after expenses" accent={netProfit>=0?"green":"ember"} glow />
         <StatCard label="Expenses" value={fmtR(totalExpenses)} sub="all-time" accent="ember" />
       </div>
+
+      <MonthCompare sales={sales} expenses={expenses} />
 
       <div className="pf-section-title"><Icon name="alert" size={13}/> Low Stock ({lowStock.length})</div>
       {lowStock.length===0 ? (
@@ -565,9 +649,13 @@ function InventoryTab({parts,search,setSearch,openModal,askConfirm,deletePart,ex
               return (
                 <div className="pf-listitem" key={p.id}>
                   <div className="pf-listitem-top">
-                    <div>
-                      <div className="pf-listitem-name">{p.name}</div>
-                      <div className="pf-listitem-meta">{p.category} · cost {fmtR(p.costPrice)} · sell {fmtR(p.sellPrice)}</div>
+                    <div className="pf-listitem-topleft">
+                      <Thumb src={p.photo} />
+                      <div>
+                        <div className="pf-listitem-name">{p.name}</div>
+                        <div className="pf-listitem-meta">{p.category} · cost {fmtR(p.costPrice)} · sell {fmtR(p.sellPrice)}</div>
+                        {p.supplier && <div className="pf-listitem-meta">from {p.supplier}</div>}
+                      </div>
                     </div>
                     <Badge tone={low?"ember":hashAccent(p.category)}>{p.qty} in stock</Badge>
                   </div>
@@ -600,8 +688,6 @@ function InventoryTab({parts,search,setSearch,openModal,askConfirm,deletePart,ex
 }
 
 function BuildsTab({activeBuilds,soldBuilds,openModal,askConfirm,removeBuildPart,cancelBuild,deleteSoldBuild}){
-  // NEW: totals for the "extra tab" the user asked for — a quick readout of
-  // build totals sits right under the New Build button.
   const activeCost = activeBuilds.reduce((s,b)=>s+b.parts.reduce((s2,bp)=>s2+bp.unitCost*bp.qty,0),0);
   const soldProfit = soldBuilds.reduce((s,b)=>{
     const cost=b.parts.reduce((s2,bp)=>s2+bp.unitCost*bp.qty,0);
@@ -625,7 +711,10 @@ function BuildsTab({activeBuilds,soldBuilds,openModal,askConfirm,removeBuildPart
         return (
           <div className="pf-card" key={b.id}>
             <div className="pf-listitem-top">
-              <div><div className="pf-listitem-name">{b.name}</div><div className="pf-listitem-meta">started {fmtDate(b.dateCreated)}</div></div>
+              <div className="pf-listitem-topleft">
+                <Thumb src={b.photo} />
+                <div><div className="pf-listitem-name">{b.name}</div><div className="pf-listitem-meta">started {fmtDate(b.dateCreated)}</div></div>
+              </div>
               <Badge tone="amber">In Progress</Badge>
             </div>
             <div className="pf-buildparts">
@@ -656,7 +745,10 @@ function BuildsTab({activeBuilds,soldBuilds,openModal,askConfirm,removeBuildPart
         return (
           <div className="pf-card" key={b.id}>
             <div className="pf-listitem-top">
-              <div><div className="pf-listitem-name">{b.name}</div><div className="pf-listitem-meta">sold {fmtDate(b.dateSold)}{b.buyer?` · ${b.buyer}`:""}</div></div>
+              <div className="pf-listitem-topleft">
+                <Thumb src={b.photo} />
+                <div><div className="pf-listitem-name">{b.name}</div><div className="pf-listitem-meta">sold {fmtDate(b.dateSold)}{b.buyer?` · ${b.buyer}`:""}</div></div>
+              </div>
               <Badge tone="green">Sold</Badge>
             </div>
             <div className="pf-buildparts">{b.parts.map((bp,i)=>(<div className="pf-buildpart-row" key={i}><span><b>{bp.name}</b> ×{bp.qty}</span><span>{fmtR(bp.unitCost*bp.qty)}</span></div>))}</div>
@@ -728,6 +820,29 @@ function ExpensesTab({expenses,totalExpenses,openModal,askConfirm,deleteExpense}
   );
 }
 
+function PhotoField({label,value,onChange}){
+  const [busy,setBusy] = useState(false);
+  async function handleFile(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    setBusy(true);
+    try{
+      const dataUrl = await resizeImageFile(file);
+      onChange(dataUrl);
+    }catch(err){
+      console.error("photo resize failed", err);
+    }
+    setBusy(false);
+  }
+  return (
+    <Field label={label}>
+      <input type="file" accept="image/*" onChange={handleFile} />
+      {busy && <div style={{fontSize:11,color:"var(--text-faint)",marginTop:6}}>Processing photo…</div>}
+      {value && !busy && <img className="pf-photo-preview" src={value} alt="preview" />}
+    </Field>
+  );
+}
+
 function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submitPart,submitRestock,submitSellPart,submitNewBuild,submitAddBuildPart,submitSellBuild,submitExpense}){
   const {type}=modal;
   const titles={ addPart: form.id?"Edit Part":"Add Part", restock:"Restock", sellPart:"Sell Part", newBuild:"New Build", addBuildPart:"Add Part To Build", sellBuild:"Mark Build Sold", addExpense:"Add Expense" };
@@ -752,8 +867,10 @@ function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submit
         {formError && <div className="pf-error">{formError}</div>}
 
         {type==="addPart" && (<>
+          <PhotoField label="Photo (optional)" value={form.photo} onChange={v=>setF("photo",v)} />
           <Field label="Name"><input value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="e.g. Ryzen 5 5600" /></Field>
           <Field label="Category"><select value={form.category||CATEGORIES[0]} onChange={e=>setF("category",e.target.value)}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
+          <Field label="Supplier"><select value={form.supplier||SUPPLIERS[0]} onChange={e=>setF("supplier",e.target.value)}>{SUPPLIERS.map(s=><option key={s} value={s}>{s}</option>)}</select></Field>
           {!form.id && <Field label="Starting Qty"><input type="number" min="0" value={form.qty??0} onChange={e=>setF("qty",e.target.value)} /></Field>}
           <div className="pf-field-row">
             <Field label="Cost Price (R)"><input type="number" min="0" step="0.01" value={form.costPrice??""} onChange={e=>setF("costPrice",e.target.value)} /></Field>
@@ -780,6 +897,7 @@ function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submit
         </>)}
 
         {type==="newBuild" && (<>
+          <PhotoField label="Photo (optional)" value={form.photo} onChange={v=>setF("photo",v)} />
           <Field label="Build Name"><input value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="e.g. Client Gaming Rig #4" /></Field>
           <Field label="Date Started"><input type="date" value={form.dateCreated||todayStr()} onChange={e=>setF("dateCreated",e.target.value)} /></Field>
           <Field label="Notes (optional)"><textarea rows={2} value={form.notes||""} onChange={e=>setF("notes",e.target.value)} /></Field>
@@ -822,7 +940,7 @@ function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submit
 
 /* ===================== Root: auth gate ===================== */
 function Root(){
-  const [user,setUser] = useState(undefined); // undefined = checking, null = signed out
+  const [user,setUser] = useState(undefined);
   useEffect(()=>{
     sb.auth.getSession().then(({data:{session}})=>setUser(session?.user ?? null));
     const { data: listener } = sb.auth.onAuthStateChange((_event, session)=>{
