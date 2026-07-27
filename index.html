@@ -299,6 +299,10 @@ function PcForgeApp({ user }){
   const [store,setStore] = useState({ parts:[], builds:[], sales:[], expenses:[] });
   const storeRef = useRef(store);
   storeRef.current = store;
+  /* Queue of pending Supabase writes, chained so they always land in the
+     order they were issued — this is what fixes the "sold build reverts
+     after refresh" bug (see persist() below for details). */
+  const writeQueueRef = useRef(Promise.resolve());
   const [modal,setModal] = useState(null);
   const [form,setForm] = useState({});
   const [formError,setFormError] = useState("");
@@ -322,13 +326,36 @@ function PcForgeApp({ user }){
     })();
   }, [user.id]);
 
-  function persist(which, data){
-    const updated = { ...storeRef.current, [which]: data };
+  /*
+   * persist() now takes a single object of ALL the fields changed by one
+   * user action (e.g. { builds: newBuilds, sales: newSales }) instead of
+   * being called once per field.
+   *
+   * Why: each call used to fire its own independent async upsert to
+   * Supabase. Actions like "mark build sold" changed two fields (builds
+   * AND sales), so they called persist() twice in a row. Two separate
+   * network requests targeting the same row have no guaranteed arrival
+   * order — if the first (older, partial) request happened to reach the
+   * server after the second (final, correct) one, it silently overwrote
+   * the correct data with a stale snapshot. That's why a build could
+   * show as "sold" locally but revert after a refresh.
+   *
+   * Fix #1: always merge every changed field into ONE upsert per action,
+   * so there's only ever one payload representing the true final state.
+   * Fix #2: chain writes through writeQueueRef so even back-to-back
+   * actions can't race each other — each upsert waits for the previous
+   * one to finish before sending.
+   */
+  function persist(changes){
+    const updated = { ...storeRef.current, ...changes };
     storeRef.current = updated;
     setStore(updated);
-    sb.from("pcforge_data")
-      .upsert({ user_id:user.id, ...updated, updated_at:new Date().toISOString() }, { onConflict:"user_id" })
-      .then(({error})=>{ if(error) console.error("save failed", error); });
+    writeQueueRef.current = writeQueueRef.current
+      .catch(()=>{})
+      .then(()=>sb.from("pcforge_data")
+        .upsert({ user_id:user.id, ...updated, updated_at:new Date().toISOString() }, { onConflict:"user_id" })
+        .then(({error})=>{ if(error) console.error("save failed", error); })
+      );
   }
 
   const { parts, builds, sales, expenses } = store;
@@ -377,9 +404,9 @@ function PcForgeApp({ user }){
     if(!name) return setFormError("Give this part a name.");
     if(qty<0||costPrice<0||sellPrice<0) return setFormError("Values can't be negative.");
     if(form.id){
-      persist("parts", parts.map(p=>p.id===form.id?{...p,name,category,supplier,photo,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}:p));
+      persist({ parts: parts.map(p=>p.id===form.id?{...p,name,category,supplier,photo,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}:p) });
     } else {
-      persist("parts", [...parts,{id:uid(),name,category,supplier,photo,qty,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}]);
+      persist({ parts: [...parts,{id:uid(),name,category,supplier,photo,qty,costPrice,sellPrice,lowStockThreshold,notes:form.notes||""}] });
     }
     closeModal();
   }
@@ -391,7 +418,7 @@ function PcForgeApp({ user }){
     const part=parts.find(p=>p.id===form.id);
     const newQty=part.qty+addQty;
     const newCost=newQty>0?((part.qty*part.costPrice)+(addQty*batchCost))/newQty:batchCost;
-    persist("parts", parts.map(p=>p.id===part.id?{...p,qty:newQty,costPrice:newCost}:p));
+    persist({ parts: parts.map(p=>p.id===part.id?{...p,qty:newQty,costPrice:newCost}:p) });
     closeModal();
   }
 
@@ -404,17 +431,19 @@ function PcForgeApp({ user }){
     const cost=part.costPrice*qty;
     const total=unitPrice*qty;
     const sale={id:uid(),date:form.date||todayStr(),type:"part",itemName:part.name,qty,unitCost:part.costPrice,unitPrice,cost,total,profit:total-cost,buyer:form.buyer||"",refId:part.id};
-    persist("parts", parts.map(p=>p.id===part.id?{...p,qty:p.qty-qty}:p));
-    persist("sales", [...sales, sale]);
+    persist({
+      parts: parts.map(p=>p.id===part.id?{...p,qty:p.qty-qty}:p),
+      sales: [...sales, sale],
+    });
     closeModal();
   }
 
-  function deletePart(id){ persist("parts", parts.filter(p=>p.id!==id)); }
+  function deletePart(id){ persist({ parts: parts.filter(p=>p.id!==id) }); }
 
   function submitNewBuild(){
     const name=(form.name||"").trim();
     if(!name) return setFormError("Give this build a name.");
-    persist("builds", [...builds, {id:uid(),name,dateCreated:form.dateCreated||todayStr(),status:"in_progress",parts:[],notes:form.notes||"",photo:form.photo||null,salePrice:null,buyer:"",dateSold:null}]);
+    persist({ builds: [...builds, {id:uid(),name,dateCreated:form.dateCreated||todayStr(),status:"in_progress",parts:[],notes:form.notes||"",photo:form.photo||null,salePrice:null,buyer:"",dateSold:null}] });
     closeModal();
   }
 
@@ -425,8 +454,10 @@ function PcForgeApp({ user }){
     if(!part) return setFormError("Choose a part.");
     if(qty<=0) return setFormError("Enter a quantity greater than zero.");
     if(qty>part.qty) return setFormError(`Only ${part.qty} in stock.`);
-    persist("builds", builds.map(b=>b.id===build.id?{...b,parts:[...b.parts,{partId:part.id,name:part.name,qty,unitCost:part.costPrice}]}:b));
-    persist("parts", parts.map(p=>p.id===part.id?{...p,qty:p.qty-qty}:p));
+    persist({
+      builds: builds.map(b=>b.id===build.id?{...b,parts:[...b.parts,{partId:part.id,name:part.name,qty,unitCost:part.costPrice}]}:b),
+      parts: parts.map(p=>p.id===part.id?{...p,qty:p.qty-qty}:p),
+    });
     closeModal();
   }
 
@@ -434,21 +465,27 @@ function PcForgeApp({ user }){
     const build=builds.find(b=>b.id===buildId);
     const entry=build.parts[index];
     const part=parts.find(p=>p.id===entry.partId);
-    persist("builds", builds.map(b=>b.id===buildId?{...b,parts:b.parts.filter((_,i)=>i!==index)}:b));
-    if(part) persist("parts", parts.map(p=>p.id===part.id?{...p,qty:p.qty+entry.qty}:p));
+    persist({
+      builds: builds.map(b=>b.id===buildId?{...b,parts:b.parts.filter((_,i)=>i!==index)}:b),
+      ...(part ? { parts: parts.map(p=>p.id===part.id?{...p,qty:p.qty+entry.qty}:p) } : {}),
+    });
   }
 
   function cancelBuild(buildId){
     const build=builds.find(b=>b.id===buildId);
     let updatedParts=parts;
     build.parts.forEach(entry=>{ updatedParts=updatedParts.map(p=>p.id===entry.partId?{...p,qty:p.qty+entry.qty}:p); });
-    persist("parts", updatedParts);
-    persist("builds", builds.filter(b=>b.id!==buildId));
+    persist({
+      parts: updatedParts,
+      builds: builds.filter(b=>b.id!==buildId),
+    });
   }
 
   function deleteSoldBuild(buildId){
-    persist("builds", builds.filter(b=>b.id!==buildId));
-    persist("sales", sales.filter(s=>s.refId!==buildId));
+    persist({
+      builds: builds.filter(b=>b.id!==buildId),
+      sales: sales.filter(s=>s.refId!==buildId),
+    });
   }
 
   function submitSellBuild(){
@@ -458,8 +495,10 @@ function PcForgeApp({ user }){
     const totalCost=build.parts.reduce((s,bp)=>s+bp.unitCost*bp.qty,0);
     const dateSold=form.dateSold||todayStr();
     const buyer=form.buyer||"";
-    persist("builds", builds.map(b=>b.id===build.id?{...b,status:"sold",salePrice,buyer,dateSold}:b));
-    persist("sales", [...sales, {id:uid(),date:dateSold,type:"build",itemName:build.name,qty:1,unitCost:totalCost,unitPrice:salePrice,cost:totalCost,total:salePrice,profit:salePrice-totalCost,buyer,refId:build.id}]);
+    persist({
+      builds: builds.map(b=>b.id===build.id?{...b,status:"sold",salePrice,buyer,dateSold}:b),
+      sales: [...sales, {id:uid(),date:dateSold,type:"build",itemName:build.name,qty:1,unitCost:totalCost,unitPrice:salePrice,cost:totalCost,total:salePrice,profit:salePrice-totalCost,buyer,refId:build.id}],
+    });
     closeModal();
   }
 
@@ -468,12 +507,12 @@ function PcForgeApp({ user }){
     const amount=Number(form.amount??0);
     if(!description) return setFormError("Add a short description.");
     if(amount<=0) return setFormError("Amount must be greater than zero.");
-    persist("expenses", [...expenses, {id:uid(),date:form.date||todayStr(),category:form.category||EXPENSE_CATEGORIES[0],description,amount}]);
+    persist({ expenses: [...expenses, {id:uid(),date:form.date||todayStr(),category:form.category||EXPENSE_CATEGORIES[0],description,amount}] });
     closeModal();
   }
 
-  function deleteExpense(id){ persist("expenses", expenses.filter(e=>e.id!==id)); }
-  function deleteSale(id){ persist("sales", sales.filter(s=>s.id!==id)); }
+  function deleteExpense(id){ persist({ expenses: expenses.filter(e=>e.id!==id) }); }
+  function deleteSale(id){ persist({ sales: sales.filter(s=>s.id!==id) }); }
 
   const filteredParts = parts.filter(p=>{
     const q=search.trim().toLowerCase();
