@@ -305,6 +305,7 @@ function PcForgeApp({ user }){
   const [formError,setFormError] = useState("");
   const [search,setSearch] = useState("");
   const [stockFilter,setStockFilter] = useState("all"); // all | in | out
+  const [categoryFilter,setCategoryFilter] = useState("all"); // all | CPU | GPU | ...
   const [confirmKey,setConfirmKey] = useState(null);
   const [expandedPart,setExpandedPart] = useState(null);
 
@@ -537,9 +538,13 @@ function PcForgeApp({ user }){
   const filteredParts = parts.filter(p=>{
     const q=search.trim().toLowerCase();
     const matchesSearch = !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || (p.supplier||"").toLowerCase().includes(q);
-    const matchesStock = stockFilter==="all" ? true : stockFilter==="in" ? p.qty>0 : p.qty===0;
-    return matchesSearch && matchesStock;
+    const matchesCategory = categoryFilter==="all" ? true : p.category===categoryFilter;
+    // Picking a specific category always shows in-stock items only (per request) —
+    // the general stock filter still applies when viewing "All" categories.
+    const matchesStock = categoryFilter!=="all" ? p.qty>0 : (stockFilter==="all" ? true : stockFilter==="in" ? p.qty>0 : p.qty===0);
+    return matchesSearch && matchesCategory && matchesStock;
   });
+  const categoryFilterQty = categoryFilter==="all" ? null : filteredParts.reduce((s,p)=>s+p.qty,0);
 
   if(loading){
     return <div className="pf-root"><div className="pf-shell" style={{alignItems:"center",justifyContent:"center",display:"flex"}}>
@@ -576,6 +581,7 @@ function PcForgeApp({ user }){
           {tab==="inventory" && (
             <InventoryTab parts={filteredParts} search={search} setSearch={setSearch}
               stockFilter={stockFilter} setStockFilter={setStockFilter}
+              categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} categoryFilterQty={categoryFilterQty}
               openModal={openModal} askConfirm={askConfirm} deletePart={deletePart}
               expandedPart={expandedPart} setExpandedPart={setExpandedPart} usedInBuilds={usedInBuilds} />
           )}
@@ -688,17 +694,26 @@ function Dashboard({stockValue,revenue,netProfit,totalExpenses,inStockQty,inStoc
   );
 }
 
-function InventoryTab({parts,search,setSearch,stockFilter,setStockFilter,openModal,askConfirm,deletePart,expandedPart,setExpandedPart,usedInBuilds}){
+function InventoryTab({parts,search,setSearch,stockFilter,setStockFilter,categoryFilter,setCategoryFilter,categoryFilterQty,openModal,askConfirm,deletePart,expandedPart,setExpandedPart,usedInBuilds}){
   return (
     <>
       <div className="pf-search"><Icon name="search" size={14} color="var(--text-faint)"/><input placeholder="Search parts…" value={search} onChange={e=>setSearch(e.target.value)} /></div>
       <div className="pf-filterrow">
-        <select value={stockFilter} onChange={e=>setStockFilter(e.target.value)}>
+        <select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+          <option value="all">All Categories</option>
+          {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={stockFilter} onChange={e=>setStockFilter(e.target.value)} disabled={categoryFilter!=="all"}>
           <option value="all">All Items</option>
           <option value="in">In Stock Only</option>
           <option value="out">Out of Stock Only</option>
         </select>
       </div>
+      {categoryFilter!=="all" && (
+        <div style={{fontFamily:"JetBrains Mono, monospace",fontSize:11,color:"var(--text-dim)",marginTop:-6,marginBottom:14}}>
+          {categoryFilterQty} {categoryFilter} unit{categoryFilterQty===1?"":"s"} in stock across {parts.length} listing{parts.length===1?"":"s"} · out-of-stock hidden
+        </div>
+      )}
       <button className="pf-btn pf-btn-primary pf-btn-block" onClick={()=>openModal("addPart")}><Icon name="plus" size={15}/> Add Part</button>
 
       <div style={{marginTop:16}}>
