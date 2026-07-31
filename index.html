@@ -901,12 +901,15 @@ function ExpensesTab({expenses,totalExpenses,openModal,askConfirm,deleteExpense}
   );
 }
 
-function PhotoField({label,value,onChange}){
+function PhotoField({label,value,onChange,enableScan,onScanResult}){
   const [busy,setBusy] = useState(false);
+  const [scanning,setScanning] = useState(false);
+  const [scanNote,setScanNote] = useState("");
   async function handleFile(e){
     const file = e.target.files[0];
     if(!file) return;
     setBusy(true);
+    setScanNote("");
     try{
       const dataUrl = await resizeImageFile(file);
       onChange(dataUrl);
@@ -915,11 +918,35 @@ function PhotoField({label,value,onChange}){
     }
     setBusy(false);
   }
+  async function handleScan(){
+    if(!value) return;
+    setScanning(true); setScanNote("");
+    try{
+      const { data, error } = await sb.functions.invoke("scan-part", { body: { image: value } });
+      if(error) throw error;
+      if(!data || !data.name){
+        setScanNote("Couldn't identify the product from this photo — enter details manually.");
+      } else {
+        onScanResult(data);
+        setScanNote(`Detected: ${data.name}${data.category?` (${data.category})`:""} — check it before saving.`);
+      }
+    }catch(err){
+      console.error("scan failed", err);
+      setScanNote("Scan failed — enter details manually.");
+    }
+    setScanning(false);
+  }
   return (
     <Field label={label}>
       <input type="file" accept="image/*" onChange={handleFile} />
       {busy && <div style={{fontSize:11,color:"var(--text-faint)",marginTop:6}}>Processing photo…</div>}
       {value && !busy && <img className="pf-photo-preview" src={value} alt="preview" />}
+      {enableScan && value && !busy && (
+        <button type="button" className="pf-btn pf-btn-sm" style={{marginTop:8}} onClick={handleScan} disabled={scanning}>
+          <Icon name="flame" size={12}/> {scanning?"Scanning…":"Scan with AI"}
+        </button>
+      )}
+      {scanNote && <div style={{fontSize:11,color:"var(--text-dim)",marginTop:6,fontFamily:"JetBrains Mono, monospace"}}>{scanNote}</div>}
     </Field>
   );
 }
@@ -949,7 +976,12 @@ function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submit
         {formError && <div className="pf-error">{formError}</div>}
 
         {type==="addPart" && (<>
-          <PhotoField label="Photo (optional)" value={form.photo} onChange={v=>setF("photo",v)} />
+          <PhotoField label="Photo (optional)" value={form.photo} onChange={v=>setF("photo",v)}
+            enableScan
+            onScanResult={(data)=>{
+              if(data.name) setF("name", data.name);
+              if(data.category && CATEGORIES.includes(data.category)) setF("category", data.category);
+            }} />
           <Field label="Name"><input value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="e.g. Ryzen 5 5600" /></Field>
           <Field label="Category"><select value={form.category||CATEGORIES[0]} onChange={e=>setF("category",e.target.value)}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
           <Field label="Supplier"><select value={form.supplier||SUPPLIERS[0]} onChange={e=>setF("supplier",e.target.value)}>{SUPPLIERS.map(s=><option key={s} value={s}>{s}</option>)}</select></Field>
