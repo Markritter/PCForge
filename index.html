@@ -905,6 +905,9 @@ function PhotoField({label,value,onChange,enableScan,onScanResult}){
   const [busy,setBusy] = useState(false);
   const [scanning,setScanning] = useState(false);
   const [scanNote,setScanNote] = useState("");
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+
   async function handleFile(e){
     const file = e.target.files[0];
     if(!file) return;
@@ -917,6 +920,7 @@ function PhotoField({label,value,onChange,enableScan,onScanResult}){
       console.error("photo resize failed", err);
     }
     setBusy(false);
+    e.target.value = ""; // allow re-selecting the same file next time
   }
   async function handleScan(){
     if(!value) return;
@@ -938,7 +942,12 @@ function PhotoField({label,value,onChange,enableScan,onScanResult}){
   }
   return (
     <Field label={label}>
-      <input type="file" accept="image/*" onChange={handleFile} />
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile} />
+      <input ref={galleryInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile} />
+      <div style={{display:"flex",gap:8}}>
+        <button type="button" className="pf-btn pf-btn-sm" style={{flex:1}} onClick={()=>cameraInputRef.current.click()}><Icon name="camera" size={13}/> Take Photo</button>
+        <button type="button" className="pf-btn pf-btn-sm" style={{flex:1}} onClick={()=>galleryInputRef.current.click()}>Choose from Gallery</button>
+      </div>
       {busy && <div style={{fontSize:11,color:"var(--text-faint)",marginTop:6}}>Processing photo…</div>}
       {value && !busy && <img className="pf-photo-preview" src={value} alt="preview" />}
       {enableScan && value && !busy && (
