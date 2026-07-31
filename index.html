@@ -76,8 +76,10 @@ min-height:100vh; display:flex; justify-content:center;
 .pf-listitem-actions{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center; }
 .pf-stockbar{ height:4px; background:var(--surface3); border-radius:2px; margin-top:8px; overflow:hidden; }
 .pf-stockbar-fill{ height:100%; }
-.pf-search{ display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); padding:9px 12px; margin-bottom:14px; }
+.pf-search{ display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); padding:9px 12px; margin-bottom:10px; }
 .pf-search input{ background:none; border:none; color:var(--text); font-family:'Inter',sans-serif; font-size:13px; outline:none; flex:1; }
+.pf-filterrow{ display:flex; gap:8px; margin-bottom:14px; }
+.pf-filterrow select{ flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:9px 10px; font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.5px; text-transform:uppercase; border-radius:2px; outline:none; }
 .pf-empty{ text-align:center; padding:40px 16px; color:var(--text-faint); }
 .pf-empty-title{ font-family:'Oswald',sans-serif; font-size:14px; letter-spacing:1px; color:var(--text-dim); text-transform:uppercase; margin-top:8px; }
 .pf-empty-msg{ font-size:12px; margin-top:6px; max-width:260px; margin-left:auto; margin-right:auto; }
@@ -93,7 +95,6 @@ min-height:100vh; display:flex; justify-content:center;
 .pf-field-row .pf-field{ flex:1; }
 .pf-error{ color:var(--ember); font-size:12px; margin-bottom:10px; font-family:'JetBrains Mono',monospace; }
 .pf-modal-actions{ display:flex; gap:8px; margin-top:16px; }
-.pf-lowstock-row{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-left:2px solid var(--ember); padding-left:10px; margin-bottom:4px; }
 .pf-activity-row{ display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--border-soft); }
 .pf-activity-row:last-child{ border-bottom:none; }
 .pf-activity-icon{ width:26px; height:26px; border-radius:2px; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
@@ -146,7 +147,6 @@ function todayStr(){ return new Date().toISOString().slice(0,10); }
 function fmtR(n){ const v=Number(n||0); return "R "+v.toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtDate(d){ if(!d) return "—"; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString("en-ZA",{day:"2-digit",month:"short",year:"numeric"}); }
 
-/* Resize + compress a photo before storing, so the database row stays small */
 function resizeImageFile(file, maxDim=480, quality=0.7){
   return new Promise((resolve,reject)=>{
     const reader = new FileReader();
@@ -169,7 +169,6 @@ function resizeImageFile(file, maxDim=480, quality=0.7){
   });
 }
 
-/* Month-over-month comparison helpers */
 function getMonthBounds(monthOffset){
   const now=new Date();
   const d=new Date(now.getFullYear(), now.getMonth()+monthOffset, 1);
@@ -211,6 +210,7 @@ function Icon({ name, size=16, color="currentColor" }){
     case "arrowUp": return <svg {...common}><path d="M7 17L17 7M7 7h10v10"/></svg>;
     case "arrowDown": return <svg {...common}><path d="M7 7l10 10M17 7v10H7"/></svg>;
     case "camera": return <svg {...common}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>;
+    case "boxes": return <svg {...common}><path d="M12 2l4 2.4v4.8L12 11.6 8 9.2V4.4z"/><path d="M4 13l4 2.4v4.8L4 22l-4-2.4v-4.8z" transform="translate(2,0)"/><path d="M16 13l4 2.4v4.8L16 22l-4-2.4v-4.8z" transform="translate(2,0)"/></svg>;
     default: return null;
   }
 }
@@ -299,14 +299,12 @@ function PcForgeApp({ user }){
   const [store,setStore] = useState({ parts:[], builds:[], sales:[], expenses:[] });
   const storeRef = useRef(store);
   storeRef.current = store;
-  /* Queue of pending Supabase writes, chained so they always land in the
-     order they were issued — this is what fixes the "sold build reverts
-     after refresh" bug (see persist() below for details). */
   const writeQueueRef = useRef(Promise.resolve());
   const [modal,setModal] = useState(null);
   const [form,setForm] = useState({});
   const [formError,setFormError] = useState("");
   const [search,setSearch] = useState("");
+  const [stockFilter,setStockFilter] = useState("all"); // all | in | out
   const [confirmKey,setConfirmKey] = useState(null);
   const [expandedPart,setExpandedPart] = useState(null);
 
@@ -326,26 +324,6 @@ function PcForgeApp({ user }){
     })();
   }, [user.id]);
 
-  /*
-   * persist() now takes a single object of ALL the fields changed by one
-   * user action (e.g. { builds: newBuilds, sales: newSales }) instead of
-   * being called once per field.
-   *
-   * Why: each call used to fire its own independent async upsert to
-   * Supabase. Actions like "mark build sold" changed two fields (builds
-   * AND sales), so they called persist() twice in a row. Two separate
-   * network requests targeting the same row have no guaranteed arrival
-   * order — if the first (older, partial) request happened to reach the
-   * server after the second (final, correct) one, it silently overwrote
-   * the correct data with a stale snapshot. That's why a build could
-   * show as "sold" locally but revert after a refresh.
-   *
-   * Fix #1: always merge every changed field into ONE upsert per action,
-   * so there's only ever one payload representing the true final state.
-   * Fix #2: chain writes through writeQueueRef so even back-to-back
-   * actions can't race each other — each upsert waits for the previous
-   * one to finish before sending.
-   */
   function persist(changes){
     const updated = { ...storeRef.current, ...changes };
     storeRef.current = updated;
@@ -373,7 +351,8 @@ function PcForgeApp({ user }){
   const grossProfit = revenue - cogs;
   const totalExpenses = useMemo(()=>expenses.reduce((s,e)=>s+Number(e.amount),0),[expenses]);
   const netProfit = grossProfit - totalExpenses;
-  const lowStock = useMemo(()=>parts.filter(p=>p.qty <= (p.lowStockThreshold ?? 2)),[parts]);
+  const inStockParts = useMemo(()=>parts.filter(p=>p.qty>0),[parts]);
+  const inStockQty = useMemo(()=>inStockParts.reduce((s,p)=>s+p.qty,0),[inStockParts]);
   const activeBuilds = builds.filter(b=>b.status==="in_progress");
   const soldBuilds = builds.filter(b=>b.status==="sold");
 
@@ -514,10 +493,52 @@ function PcForgeApp({ user }){
   function deleteExpense(id){ persist({ expenses: expenses.filter(e=>e.id!==id) }); }
   function deleteSale(id){ persist({ sales: sales.filter(s=>s.id!==id) }); }
 
+  /* Edit an existing sale. Part sales can have qty/price/buyer/date changed
+     (stock is adjusted by the difference in qty). Build sales can have
+     price/buyer/date changed, and the linked build record is kept in sync. */
+  function submitEditSale(){
+    const sale = sales.find(s=>s.id===form.id);
+    if(!sale) return closeModal();
+    const newBuyer = form.buyer||"";
+    const newDate = form.date||sale.date;
+
+    if(sale.type==="part"){
+      const newQty = Number(form.qty??sale.qty);
+      const newUnitPrice = Number(form.unitPrice??sale.unitPrice);
+      if(newQty<=0) return setFormError("Quantity must be greater than zero.");
+      if(newUnitPrice<0) return setFormError("Price can't be negative.");
+      const part = parts.find(p=>p.id===sale.refId);
+      const qtyDelta = newQty - sale.qty; // >0 means selling more than before
+      let updatedParts = parts;
+      if(part){
+        if(qtyDelta>0 && part.qty<qtyDelta) return setFormError(`Only ${part.qty} more in stock.`);
+        updatedParts = parts.map(p=>p.id===part.id?{...p,qty:p.qty-qtyDelta}:p);
+      }
+      const cost = sale.unitCost*newQty;
+      const total = newUnitPrice*newQty;
+      const updatedSale = {...sale, qty:newQty, unitPrice:newUnitPrice, buyer:newBuyer, date:newDate, cost, total, profit: total-cost};
+      persist({
+        sales: sales.map(s=>s.id===sale.id?updatedSale:s),
+        ...(part ? { parts: updatedParts } : {}),
+      });
+    } else {
+      const newSalePrice = Number(form.salePrice??sale.unitPrice);
+      if(newSalePrice<0) return setFormError("Sale price can't be negative.");
+      const cost = sale.cost;
+      const updatedSale = {...sale, unitPrice:newSalePrice, total:newSalePrice, profit:newSalePrice-cost, buyer:newBuyer, date:newDate};
+      persist({
+        sales: sales.map(s=>s.id===sale.id?updatedSale:s),
+        builds: builds.map(b=>b.id===sale.refId?{...b,salePrice:newSalePrice,buyer:newBuyer,dateSold:newDate}:b),
+      });
+    }
+    closeModal();
+  }
+
   const filteredParts = parts.filter(p=>{
     const q=search.trim().toLowerCase();
-    if(!q) return true;
-    return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || (p.supplier||"").toLowerCase().includes(q);
+    const matchesSearch = !q || p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || (p.supplier||"").toLowerCase().includes(q);
+    const matchesStock = stockFilter==="all" ? true : stockFilter==="in" ? p.qty>0 : p.qty===0;
+    return matchesSearch && matchesStock;
   });
 
   if(loading){
@@ -548,19 +569,21 @@ function PcForgeApp({ user }){
         <div className="pf-content">
           {tab==="dashboard" && (
             <Dashboard stockValue={stockValue} revenue={revenue} netProfit={netProfit} totalExpenses={totalExpenses}
-              lowStock={lowStock} recentActivity={recentActivity} activeBuildsCount={activeBuilds.length}
+              inStockQty={inStockQty} inStockCount={inStockParts.length}
+              recentActivity={recentActivity} activeBuildsCount={activeBuilds.length}
               sales={sales} expenses={expenses} />
           )}
           {tab==="inventory" && (
-            <InventoryTab parts={filteredParts} search={search} setSearch={setSearch} openModal={openModal}
-              askConfirm={askConfirm} deletePart={deletePart} expandedPart={expandedPart} setExpandedPart={setExpandedPart}
-              usedInBuilds={usedInBuilds} />
+            <InventoryTab parts={filteredParts} search={search} setSearch={setSearch}
+              stockFilter={stockFilter} setStockFilter={setStockFilter}
+              openModal={openModal} askConfirm={askConfirm} deletePart={deletePart}
+              expandedPart={expandedPart} setExpandedPart={setExpandedPart} usedInBuilds={usedInBuilds} />
           )}
           {tab==="builds" && (
             <BuildsTab activeBuilds={activeBuilds} soldBuilds={soldBuilds} openModal={openModal} askConfirm={askConfirm}
               removeBuildPart={removeBuildPart} cancelBuild={cancelBuild} deleteSoldBuild={deleteSoldBuild} />
           )}
-          {tab==="sales" && <SalesTab sales={sales} askConfirm={askConfirm} deleteSale={deleteSale} />}
+          {tab==="sales" && <SalesTab sales={sales} askConfirm={askConfirm} deleteSale={deleteSale} openModal={openModal} />}
           {tab==="expenses" && (
             <ExpensesTab expenses={expenses} totalExpenses={totalExpenses} openModal={openModal} askConfirm={askConfirm} deleteExpense={deleteExpense} />
           )}
@@ -579,7 +602,7 @@ function PcForgeApp({ user }){
         <ModalRenderer modal={modal} form={form} setF={setF} formError={formError} closeModal={closeModal}
           parts={parts} builds={builds} submitPart={submitPart} submitRestock={submitRestock} submitSellPart={submitSellPart}
           submitNewBuild={submitNewBuild} submitAddBuildPart={submitAddBuildPart} submitSellBuild={submitSellBuild}
-          submitExpense={submitExpense} />
+          submitExpense={submitExpense} submitEditSale={submitEditSale} />
       )}
     </div>
   );
@@ -625,7 +648,7 @@ function MonthCompare({sales,expenses}){
   );
 }
 
-function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentActivity,activeBuildsCount,sales,expenses}){
+function Dashboard({stockValue,revenue,netProfit,totalExpenses,inStockQty,inStockCount,recentActivity,activeBuildsCount,sales,expenses}){
   return (
     <>
       <div className="pf-section-title"><Icon name="dashboard" size={13}/> Readout</div>
@@ -638,14 +661,8 @@ function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentAc
 
       <MonthCompare sales={sales} expenses={expenses} />
 
-      <div className="pf-section-title"><Icon name="alert" size={13}/> Low Stock ({lowStock.length})</div>
-      {lowStock.length===0 ? (
-        <div className="pf-card" style={{color:"var(--text-faint)",fontSize:12}}>Nothing running low. Shelves look healthy.</div>
-      ) : (
-        <div className="pf-card">{lowStock.map(p=>(
-          <div key={p.id} className="pf-lowstock-row"><span style={{fontSize:13}}>{p.name}</span><Badge tone="ember">{p.qty} left</Badge></div>
-        ))}</div>
-      )}
+      <div className="pf-section-title"><Icon name="boxes" size={13}/> Stock On Hand</div>
+      <StatCard label="In Stock Qty" value={inStockQty} sub={`${inStockCount} part${inStockCount===1?"":"s"} in stock`} accent="blue" />
 
       <div className="pf-section-title"><Icon name="wrench" size={13}/> Builds In Progress ({activeBuildsCount})</div>
 
@@ -671,15 +688,22 @@ function Dashboard({stockValue,revenue,netProfit,totalExpenses,lowStock,recentAc
   );
 }
 
-function InventoryTab({parts,search,setSearch,openModal,askConfirm,deletePart,expandedPart,setExpandedPart,usedInBuilds}){
+function InventoryTab({parts,search,setSearch,stockFilter,setStockFilter,openModal,askConfirm,deletePart,expandedPart,setExpandedPart,usedInBuilds}){
   return (
     <>
       <div className="pf-search"><Icon name="search" size={14} color="var(--text-faint)"/><input placeholder="Search parts…" value={search} onChange={e=>setSearch(e.target.value)} /></div>
+      <div className="pf-filterrow">
+        <select value={stockFilter} onChange={e=>setStockFilter(e.target.value)}>
+          <option value="all">All Items</option>
+          <option value="in">In Stock Only</option>
+          <option value="out">Out of Stock Only</option>
+        </select>
+      </div>
       <button className="pf-btn pf-btn-primary pf-btn-block" onClick={()=>openModal("addPart")}><Icon name="plus" size={15}/> Add Part</button>
 
       <div style={{marginTop:16}}>
         {parts.length===0 ? (
-          <EmptyState icon="package" title="Shelf's empty" message="Add your first component to start tracking stock, cost and margin." />
+          <EmptyState icon="package" title="Nothing here" message="No parts match this filter yet." />
         ) : (
           <div className="pf-card">
             {parts.map(p=>{
@@ -696,7 +720,7 @@ function InventoryTab({parts,search,setSearch,openModal,askConfirm,deletePart,ex
                         {p.supplier && <div className="pf-listitem-meta">from {p.supplier}</div>}
                       </div>
                     </div>
-                    <Badge tone={low?"ember":hashAccent(p.category)}>{p.qty} in stock</Badge>
+                    <Badge tone={p.qty===0?"dim":low?"ember":hashAccent(p.category)}>{p.qty===0?"out of stock":`${p.qty} in stock`}</Badge>
                   </div>
                   <div className="pf-stockbar"><div className="pf-stockbar-fill" style={{width:`${Math.min(100,(p.qty/Math.max((p.lowStockThreshold||2)*3,6))*100)}%`, background: low?"var(--ember)":"var(--amber)"}} /></div>
                   <div className="pf-listitem-actions">
@@ -804,7 +828,7 @@ function BuildsTab({activeBuilds,soldBuilds,openModal,askConfirm,removeBuildPart
   );
 }
 
-function SalesTab({sales,askConfirm,deleteSale}){
+function SalesTab({sales,askConfirm,deleteSale,openModal}){
   const sorted=[...sales].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const totalRevenue=sales.reduce((s,x)=>s+x.total,0);
   const totalProfit=sales.reduce((s,x)=>s+x.profit,0);
@@ -827,7 +851,10 @@ function SalesTab({sales,askConfirm,deleteSale}){
                 <div style={{fontFamily:"JetBrains Mono, monospace",fontSize:11,color:s.profit>=0?"var(--green)":"var(--ember)"}}>{s.profit>=0?"+":""}{fmtR(s.profit)} profit</div>
               </div>
             </div>
-            <div className="pf-listitem-actions"><button className="pf-btn pf-btn-sm pf-btn-danger" onClick={()=>askConfirm("sale-"+s.id, ()=>deleteSale(s.id))}>Delete</button></div>
+            <div className="pf-listitem-actions">
+              <button className="pf-btn pf-btn-sm" onClick={()=>openModal("editSale",{...s})}><Icon name="pencil" size={12}/> Edit</button>
+              <button className="pf-btn pf-btn-sm pf-btn-danger" onClick={()=>askConfirm("sale-"+s.id, ()=>deleteSale(s.id))}>Delete</button>
+            </div>
           </div>
         ))}</div>
       )}
@@ -882,9 +909,9 @@ function PhotoField({label,value,onChange}){
   );
 }
 
-function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submitPart,submitRestock,submitSellPart,submitNewBuild,submitAddBuildPart,submitSellBuild,submitExpense}){
+function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submitPart,submitRestock,submitSellPart,submitNewBuild,submitAddBuildPart,submitSellBuild,submitExpense,submitEditSale}){
   const {type}=modal;
-  const titles={ addPart: form.id?"Edit Part":"Add Part", restock:"Restock", sellPart:"Sell Part", newBuild:"New Build", addBuildPart:"Add Part To Build", sellBuild:"Mark Build Sold", addExpense:"Add Expense" };
+  const titles={ addPart: form.id&&type==="addPart"?"Edit Part":"Add Part", restock:"Restock", sellPart:"Sell Part", newBuild:"New Build", addBuildPart:"Add Part To Build", sellBuild:"Mark Build Sold", addExpense:"Add Expense", editSale:"Edit Sale" };
   const part = form.id && (type==="restock"||type==="sellPart") ? parts.find(p=>p.id===form.id) : null;
   const build = form.id && type==="sellBuild" ? builds.find(b=>b.id===form.id) : null;
   const availableParts = parts.filter(p=>p.qty>0);
@@ -897,6 +924,7 @@ function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submit
     else if(type==="addBuildPart") submitAddBuildPart();
     else if(type==="sellBuild") submitSellBuild();
     else if(type==="addExpense") submitExpense();
+    else if(type==="editSale") submitEditSale();
   }
 
   return (
@@ -966,6 +994,23 @@ function ModalRenderer({modal,form,setF,formError,closeModal,parts,builds,submit
             <Field label="Amount (R)"><input type="number" min="0" step="0.01" value={form.amount??""} onChange={e=>setF("amount",e.target.value)} /></Field>
             <Field label="Date"><input type="date" value={form.date||todayStr()} onChange={e=>setF("date",e.target.value)} /></Field>
           </div>
+        </>)}
+
+        {type==="editSale" && form.type==="part" && (<>
+          <div style={{fontSize:13,color:"var(--text-dim)",marginBottom:10}}>{form.itemName}</div>
+          <div className="pf-field-row">
+            <Field label="Quantity"><input type="number" min="1" value={form.qty??1} onChange={e=>setF("qty",e.target.value)} /></Field>
+            <Field label="Sell Price / Unit (R)"><input type="number" min="0" step="0.01" value={form.unitPrice??0} onChange={e=>setF("unitPrice",e.target.value)} /></Field>
+          </div>
+          <Field label="Buyer (optional)"><input value={form.buyer||""} onChange={e=>setF("buyer",e.target.value)} /></Field>
+          <Field label="Date"><input type="date" value={form.date||todayStr()} onChange={e=>setF("date",e.target.value)} /></Field>
+        </>)}
+
+        {type==="editSale" && form.type==="build" && (<>
+          <div style={{fontSize:13,color:"var(--text-dim)",marginBottom:10}}>{form.itemName} — part cost {fmtR(form.cost)}</div>
+          <Field label="Sale Price (R)"><input type="number" min="0" step="0.01" value={form.unitPrice??0} onChange={e=>setF("unitPrice",e.target.value)} /></Field>
+          <Field label="Buyer (optional)"><input value={form.buyer||""} onChange={e=>setF("buyer",e.target.value)} /></Field>
+          <Field label="Date"><input type="date" value={form.date||todayStr()} onChange={e=>setF("date",e.target.value)} /></Field>
         </>)}
 
         <div className="pf-modal-actions">
